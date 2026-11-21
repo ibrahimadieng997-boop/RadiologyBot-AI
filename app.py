@@ -1,0 +1,906 @@
+
+import base64
+import html as html_lib
+import re
+import time
+import urllib.request
+from pathlib import Path
+
+import streamlit as st
+
+# Import sécurisé : si la base ou Ollama pose problème, l'application s'affiche quand même
+try:
+    from chatbot import ask_ai
+    erreur_import = None
+except Exception as erreur:
+    ask_ai = None
+    erreur_import = erreur
+
+
+def afficher_html(contenu, **options):
+    """Affiche du HTML sans lignes vides ni indentation
+    (sinon Markdown le prend pour un bloc de code)."""
+    lignes = [l.strip() for l in contenu.splitlines() if l.strip()]
+    st.markdown(" ".join(lignes), unsafe_allow_html=True)
+
+
+def ollama_actif() -> bool:
+    """Vérifie que le serveur Ollama répond."""
+    try:
+        with urllib.request.urlopen("http://localhost:11434", timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+# =====================================================
+# 1. CONFIGURATION
+# =====================================================
+
+st.set_page_config(
+    page_title="RadiologyBot AI",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+ROBOT = Path("assets/radiologybot_avatar.png")
+robot_disponible = ROBOT.exists()
+en_ligne = ollama_actif() and ask_ai is not None
+
+# True  : robot animé (yeux qui clignotent), dessiné dans le code
+# False : votre image assets/radiologybot_avatar.png
+ROBOT_ANIME = True
+
+# Robot animé en SVG : les yeux clignotent, l'antenne pulse, le robot flotte
+ROBOT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+<style>
+.float{animation:float 3s ease-in-out infinite}
+.eye{transform-box:fill-box;transform-origin:center;animation:blink 4.5s infinite}
+.antenna{animation:pulse 2s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes blink{0%,38%,42%,84%,88%,100%{transform:scaleY(1)}40%,86%{transform:scaleY(0.06)}}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+</style>
+<defs>
+<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#1d4f82"/>
+<stop offset="1" stop-color="#0b2540"/>
+</linearGradient>
+</defs>
+<g class="float">
+<line x1="150" y1="40" x2="150" y2="68" stroke="#35d9ff" stroke-width="5" stroke-linecap="round"/>
+<circle class="antenna" cx="150" cy="30" r="11" fill="#35d9ff"/>
+<rect x="36" y="118" width="24" height="56" rx="11" fill="#142f54" stroke="#35d9ff" stroke-width="3"/>
+<rect x="240" y="118" width="24" height="56" rx="11" fill="#142f54" stroke="#35d9ff" stroke-width="3"/>
+<rect x="55" y="66" width="190" height="150" rx="42" fill="url(#g)" stroke="#35d9ff" stroke-width="4"/>
+<rect x="78" y="92" width="144" height="84" rx="26" fill="#061426" stroke="#28618a" stroke-width="2"/>
+<g class="eye">
+<ellipse cx="118" cy="132" rx="18" ry="21" fill="#35d9ff"/>
+<circle cx="112" cy="124" r="5" fill="#ffffff" opacity="0.85"/>
+</g>
+<g class="eye">
+<ellipse cx="182" cy="132" rx="18" ry="21" fill="#35d9ff"/>
+<circle cx="176" cy="124" r="5" fill="#ffffff" opacity="0.85"/>
+</g>
+<path d="M128 192 Q150 207 172 192" stroke="#35d9ff" stroke-width="5" fill="none" stroke-linecap="round"/>
+<rect x="136" y="214" width="28" height="16" fill="#142f54"/>
+<rect x="85" y="228" width="130" height="62" rx="26" fill="url(#g)" stroke="#35d9ff" stroke-width="4"/>
+<rect x="142" y="240" width="16" height="40" rx="4" fill="#25e0a0"/>
+<rect x="130" y="252" width="40" height="16" rx="4" fill="#25e0a0"/>
+</g>
+</svg>"""
+
+ROBOT_SVG_B64 = base64.b64encode(ROBOT_SVG.encode("utf-8")).decode("ascii")
+
+
+# =====================================================
+# 2. DESIGN DE L'APPLICATION
+# =====================================================
+
+st.markdown("""
+<style>
+
+.stApp {
+    background:
+        radial-gradient(circle at 10% 5%, #173d66 0%, transparent 35%),
+        linear-gradient(135deg, #061426, #0b203b, #102e50);
+    color: white;
+}
+
+footer, #MainMenu, [data-testid="stToolbar"] {
+    visibility: hidden;
+}
+
+header {
+    background: transparent;
+}
+
+.block-container {
+    max-width: 1100px;
+    padding-top: 25px;
+    padding-bottom: 60px;
+}
+
+/* TITRE */
+
+.brand {
+    text-align: center;
+    font-size: 40px;
+    font-weight: 850;
+    color: white;
+    letter-spacing: 1px;
+}
+
+.brand span {
+    color: #35d9ff;
+}
+
+.subtitle {
+    text-align: center;
+    color: #b4cce5;
+    font-size: 16px;
+    margin-bottom: 25px;
+}
+
+/* CARTE D'ACCUEIL */
+
+.hero {
+    background: linear-gradient(135deg, #102b50, #071a32);
+    border: 1px solid #28618a;
+    border-radius: 24px;
+    padding: 25px;
+    margin-bottom: 18px;
+}
+
+.online {
+    color: #25e0a0;
+    font-weight: bold;
+}
+
+.hero h1 {
+    font-size: 31px;
+    color: white;
+}
+
+.hero p {
+    color: #c5d9ef;
+    font-size: 18px;
+}
+
+/* CARTES */
+
+.service-card {
+    background: #142f54;
+    border: 1px solid rgba(53,217,255,.2);
+    border-radius: 17px;
+    padding: 18px;
+    min-height: 120px;
+}
+
+.service-card h3 {
+    color: white;
+    font-size: 18px;
+}
+
+.service-card p {
+    color: #c2d7ed;
+    font-size: 14px;
+}
+
+/* ROBOT */
+
+.robot-box {
+    background: linear-gradient(135deg, #102b50, #0a1c35);
+    border: 1px solid #35d9ff;
+    border-radius: 24px;
+    padding: 20px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.robot-heading {
+    text-align: center;
+    color: #35d9ff;
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.robot-title {
+    color: white;
+    font-size: 27px;
+    font-weight: 800;
+}
+
+.robot-description {
+    color: #d5e8fa;
+    font-size: 17px;
+    line-height: 1.6;
+}
+
+.robot-status {
+    display: inline-block;
+    background: #103f3b;
+    color: #27e5a2;
+    padding: 9px 15px;
+    border-radius: 25px;
+    font-weight: bold;
+}
+
+/* BOUTONS */
+
+.stButton > button {
+    background: #142f54;
+    color: white;
+    border: 1px solid #28618a;
+    border-radius: 13px;
+    min-height: 48px;
+    font-weight: 600;
+}
+
+.stButton > button:hover {
+    background: #15527b;
+    color: white;
+    border: 1px solid #35d9ff;
+}
+
+/* TEXTE DES RÉPONSES : blanc clair, bien visible */
+
+[data-testid="stChatMessage"],
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessage"] li,
+[data-testid="stChatMessage"] span,
+[data-testid="stChatMessage"] div,
+[data-testid="stChatMessage"] strong,
+[data-testid="stChatMessage"] em,
+[data-testid="stChatMessage"] h1,
+[data-testid="stChatMessage"] h2,
+[data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4 {
+    color: #f4f8fc !important;
+    opacity: 1 !important;
+}
+
+[data-testid="stChatMessage"] li::marker {
+    color: #35d9ff;
+}
+
+/* ============ BARRE DE SAISIE PREMIUM ============ */
+
+/* Zone du bas : fond sombre dégradé (supprime la bande blanche) */
+[data-testid="stBottom"],
+[data-testid="stBottom"] > div,
+[data-testid="stBottomBlockContainer"] {
+    background: linear-gradient(180deg, rgba(6,20,38,0) 0%, #061426 38%) !important;
+    box-shadow: none !important;
+}
+
+[data-testid="stBottomBlockContainer"] {
+    max-width: 1100px;
+    padding-top: 22px;
+    padding-bottom: 26px;
+}
+
+.saisie-note {
+    text-align: center;
+    margin: 4px 0 22px 0;
+    font-size: 13px;
+    letter-spacing: .3px;
+    color: #8fb0d0;
+}
+
+.suggest-title {
+    color: #b4cce5;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 6px 0 10px 2px;
+}
+
+/* Capsule de saisie */
+[data-testid="stChatInput"] {
+    margin-top: 8px;
+}
+[data-testid="stChatInput"] {
+    border: none !important;
+    background: transparent !important;
+    border-radius: 32px;
+}
+
+[data-testid="stChatInput"] > div {
+    background: linear-gradient(180deg, #ffffff, #eef5fb) !important;
+    border: 2px solid rgba(53,217,255,.65) !important;
+    border-radius: 32px !important;
+    min-height: 62px;
+    padding: 4px 10px 4px 18px;
+    box-shadow:
+        0 0 0 4px rgba(53,217,255,.10),
+        0 10px 35px rgba(0,0,0,.45),
+        0 0 28px rgba(53,217,255,.22);
+    transition: all .25s ease;
+}
+
+[data-testid="stChatInput"] > div:focus-within {
+    border-color: #25e0a0 !important;
+    box-shadow:
+        0 0 0 5px rgba(37,224,160,.18),
+        0 12px 40px rgba(0,0,0,.5),
+        0 0 36px rgba(37,224,160,.35);
+}
+
+/* Texte saisi : noir foncé bien visible */
+[data-testid="stChatInput"] textarea,
+[data-testid="stChatInput"] input {
+    color: #0a0a0a !important;
+    -webkit-text-fill-color: #0a0a0a !important;
+    caret-color: #0a6ea8 !important;
+    font-size: 17px !important;
+    font-weight: 500;
+    background: transparent !important;
+}
+
+[data-testid="stChatInput"] textarea::placeholder,
+[data-testid="stChatInput"] input::placeholder {
+    color: #243447 !important;
+    -webkit-text-fill-color: #243447 !important;
+    opacity: .85 !important;
+    font-weight: 400;
+}
+
+/* Bouton d'envoi : pastille dégradée */
+[data-testid="stChatInputSubmitButton"],
+[data-testid="stChatInput"] button {
+    background: linear-gradient(135deg, #35d9ff, #25e0a0) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 44px;
+    height: 44px;
+    box-shadow: 0 4px 14px rgba(53,217,255,.5);
+    transition: transform .2s ease, box-shadow .2s ease;
+}
+
+[data-testid="stChatInputSubmitButton"]:hover,
+[data-testid="stChatInput"] button:hover {
+    transform: scale(1.1) rotate(-6deg);
+    box-shadow: 0 6px 20px rgba(37,224,160,.65);
+}
+
+[data-testid="stChatInputSubmitButton"] svg,
+[data-testid="stChatInput"] button svg {
+    color: #06233a !important;
+    fill: #06233a !important;
+}
+
+/* ============ FENÊTRE DE CONVERSATION ============ */
+
+.chat-header {
+    background: linear-gradient(135deg, #12335c, #0a1f3a);
+    border: 1px solid rgba(53,217,255,.35);
+    border-radius: 18px;
+    padding: 14px 22px;
+    margin: 30px 0 16px 0;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 700;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+}
+
+.chat-status {
+    color: #25e0a0;
+    font-size: 14px;
+    font-weight: 600;
+    margin-left: 14px;
+}
+
+.chat-empty {
+    text-align: center;
+    padding: 34px 20px;
+    border: 1px dashed rgba(53,217,255,.4);
+    border-radius: 18px;
+    color: #a9c4df;
+    font-size: 16px;
+    margin-bottom: 16px;
+}
+
+/* Fenêtre de discussion */
+.st-key-fenetre_chat {
+    background: linear-gradient(180deg, #0a1b30, #07121f);
+    border: 1px solid rgba(53,217,255,.25);
+    border-radius: 22px;
+    padding: 20px 22px 8px 22px;
+    margin-bottom: 26px;
+    box-shadow: inset 0 0 40px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.35);
+}
+
+/* Avatars masqués : on garde des bulles propres comme sur WhatsApp */
+[data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessageAvatarAssistant"],
+[data-testid^="chatAvatarIcon"] {
+    display: none !important;
+}
+
+/* Bulle du robot : à gauche */
+[data-testid="stChatMessage"] {
+    background: linear-gradient(135deg, #1b3f6b, #13304f) !important;
+    border: 1px solid rgba(53,217,255,.25);
+    border-radius: 20px 20px 20px 5px;
+    padding: 12px 20px 8px 20px;
+    margin: 0 auto 16px 0;
+    width: 82%;
+    max-width: 82%;
+    box-shadow: 0 4px 14px rgba(0,0,0,.30);
+}
+
+/* Bulle du patient : à droite, verte */
+[data-testid="stChatMessage"]:has(.msg-user) {
+    background: linear-gradient(135deg, #0f7a6a, #0b5d52) !important;
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 20px 20px 5px 20px;
+    margin: 0 0 16px auto;
+    width: fit-content;
+    min-width: 180px;
+    max-width: 75%;
+}
+
+[data-testid="stChatMessage"] p {
+    font-size: 16.5px;
+    line-height: 1.7;
+}
+
+[data-testid="stChatMessage"] .msg-nom {
+    color: #35d9ff !important;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+[data-testid="stChatMessage"] .msg-heure {
+    display: block;
+    text-align: right;
+    font-size: 11.5px;
+    margin-top: 4px;
+    color: #9fc3e6 !important;
+}
+
+[data-testid="stChatMessage"]:has(.msg-user) .msg-heure {
+    color: #bff3e8 !important;
+}
+
+[data-testid="stChatMessage"] h1,
+[data-testid="stChatMessage"] h2,
+[data-testid="stChatMessage"] h3 {
+    color: #35d9ff !important;
+}
+
+[data-testid="stSpinner"] * {
+    color: #b4cce5 !important;
+}
+
+/* PIED DE PAGE */
+
+.footer {
+    text-align: center;
+    color: #a9c4df;
+    font-size: 13px;
+    padding: 25px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# =====================================================
+# 3. EN-TÊTE
+# =====================================================
+
+afficher_html("""
+<div class="brand">
+    🤖 RADIOLOGY<span>BOT AI</span>
+</div>
+
+<div class="subtitle">
+    Assistant intelligent du service de radiologie
+    <br>
+    Votre santé, notre priorité.
+</div>
+""", unsafe_allow_html=True)
+
+
+# =====================================================
+# 4. CARTE PRINCIPALE
+# =====================================================
+
+statut = "● En ligne" if en_ligne else "● Hors ligne"
+
+afficher_html(f"""
+<div class="hero">
+
+    <div class="online">{statut}</div>
+
+    <h1>Votre santé, notre priorité.</h1>
+
+    <p>
+        Comment puis-je vous accompagner aujourd'hui ?
+    </p>
+
+</div>
+""", unsafe_allow_html=True)
+
+
+# =====================================================
+# 5. INFORMATIONS DU SERVICE
+# =====================================================
+
+col1, col2 = st.columns(2)
+
+with col1:
+    afficher_html("""
+    <div class="service-card">
+        <h3>🏥 Informations médicales</h3>
+        <p>
+            Accédez aux informations pratiques
+            du service de radiologie.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    afficher_html("""
+    <div class="service-card">
+        <h3>🧭 Orientation patient</h3>
+        <p>
+            Découvrez les examens disponibles,
+            les horaires et la localisation.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# =====================================================
+# 6. PRÉSENTATION DU ROBOT
+# =====================================================
+
+afficher_html("""
+<div class="robot-box">
+    <div class="robot-heading">
+        🤖 VOTRE ASSISTANT MÉDICAL
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+robot_col, text_col = st.columns(
+    [1.2, 2],
+    vertical_alignment="center"
+)
+
+with robot_col:
+
+    if ROBOT_ANIME:
+        st.markdown(
+            f'<img src="data:image/svg+xml;base64,{ROBOT_SVG_B64}" '
+            'alt="RadiologyBot AI" '
+            'style="width:100%;max-width:320px;display:block;margin:auto;">',
+            unsafe_allow_html=True
+        )
+    elif robot_disponible:
+        st.image(
+            str(ROBOT),
+            width="stretch"
+        )
+    else:
+        st.warning(
+            "Image introuvable : vérifiez le dossier assets."
+        )
+
+with text_col:
+
+    statut_robot = (
+        "● Assistant disponible" if en_ligne
+        else "● Assistant indisponible"
+    )
+
+    afficher_html(f"""
+    <div>
+
+        <div class="robot-title">
+            Bonjour ! Je suis RadiologyBot AI.
+        </div>
+
+        <p class="robot-description">
+            Votre assistant intelligent est disponible
+            pour vous accompagner et répondre à vos
+            questions sur le service de radiologie.
+        </p>
+
+        <div class="robot-status">
+            {statut_robot}
+        </div>
+
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# =====================================================
+# 7. INITIALISATION DE LA CONVERSATION
+# =====================================================
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "pending_question" not in st.session_state:
+    st.session_state.pending_question = None
+
+
+def definir_question(question):
+    """Appelée au clic sur un bouton : mémorise la question à traiter."""
+    st.session_state.pending_question = question
+
+
+st.divider()
+
+st.markdown("## 💬 Discutez avec votre assistant")
+
+st.caption(
+    "Posez votre question directement au robot."
+)
+
+
+# =====================================================
+# 8. ZONE DE SAISIE (juste sous le robot)
+# =====================================================
+
+with st.container():
+    question_saisie = st.chat_input(
+        "Écrivez votre question à RadiologyBot AI..."
+    )
+
+afficher_html("""
+<div class="saisie-note">
+    🔒 Informations générales du service — ne remplace pas un avis médical
+</div>
+""")
+
+if question_saisie:
+    st.session_state.pending_question = question_saisie
+
+
+# =====================================================
+# 10. CONVERSATION STYLE WHATSAPP (réponse sous la question)
+# =====================================================
+
+def ecrire_progressivement(texte):
+    """Effet machine à écrire pour la réponse du robot."""
+    for morceau in re.split(r"(\s+)", texte):
+        yield morceau
+        time.sleep(0.012)
+
+
+def heure_actuelle():
+    return time.strftime("%H:%M")
+
+
+def afficher_message(role, contenu, heure=""):
+    """Affiche un message : patient à droite, robot à gauche."""
+    if role == "user":
+        with st.chat_message("user", avatar="👤"):
+            texte = html_lib.escape(contenu).replace("\n", "  \n")
+            st.markdown(
+                '<span class="msg-user"></span>' + texte
+                + f'<span class="msg-heure">{heure} ✓✓</span>',
+                unsafe_allow_html=True
+            )
+    else:
+        avatar = str(ROBOT) if robot_disponible else "🤖"
+        with st.chat_message("assistant", avatar=avatar):
+            afficher_html('<div class="msg-nom">🤖 RadiologyBot AI</div>')
+            st.markdown(contenu)
+            afficher_html(f'<div class="msg-heure">{heure}</div>')
+
+
+def defiler_vers_le_dernier_message():
+    try:
+        import streamlit.components.v1 as components
+        components.html(
+            """<script>
+            const d = window.parent.document;
+            const m = d.querySelectorAll('[data-testid="stChatMessage"]');
+            if (m.length) {
+                m[m.length - 1].scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+            </script>""",
+            height=0
+        )
+    except Exception:
+        pass
+
+
+entete_col, bouton_col = st.columns([4, 1], vertical_alignment="center")
+
+with entete_col:
+    statut_chat = "● En ligne" if en_ligne else "● Hors ligne"
+    afficher_html(f"""
+    <div class="chat-header">
+        💬 Conversation avec RadiologyBot AI
+        <span class="chat-status">{statut_chat}</span>
+    </div>
+    """)
+
+with bouton_col:
+    if st.button("🗑️ Effacer", key="effacer_conversation", width="stretch"):
+        st.session_state.messages = []
+        st.session_state.pending_question = None
+        st.rerun()
+
+question_en_cours = st.session_state.pending_question
+st.session_state.pending_question = None
+
+nouvelle_reponse = None
+
+with st.container(key="fenetre_chat"):
+
+    if not st.session_state.messages and not question_en_cours:
+        afficher_html("""
+        <div class="chat-empty">
+            👋 Aucune question pour le moment.<br>
+            Écrivez votre question ci-dessus ou choisissez une question
+            fréquente plus bas : la réponse s'affichera ici, sous votre question.
+        </div>
+        """)
+
+    # Historique : question, puis réponse en dessous
+    for message in st.session_state.messages:
+        afficher_message(
+            message["role"],
+            message["content"],
+            message.get("heure", "")
+        )
+
+    # Nouvelle question : affichée tout de suite, puis réponse en direct
+    if question_en_cours:
+
+        heure_question = heure_actuelle()
+        afficher_message("user", question_en_cours, heure_question)
+
+        avatar = str(ROBOT) if robot_disponible else "🤖"
+
+        with st.chat_message("assistant", avatar=avatar):
+
+            afficher_html('<div class="msg-nom">🤖 RadiologyBot AI</div>')
+
+            erreur_technique = None
+
+            try:
+                with st.spinner("RadiologyBot écrit..."):
+
+                    if ask_ai is None:
+                        raise RuntimeError(
+                            f"Moteur RAG indisponible : {erreur_import}"
+                        )
+
+                    reponse = ask_ai(question_en_cours)
+
+                if not isinstance(reponse, str) or not reponse.strip():
+                    reponse = (
+                        "Je n'ai pas pu produire une réponse. "
+                        "Veuillez reformuler votre question."
+                    )
+
+            except Exception as erreur:
+                erreur_technique = f"{type(erreur).__name__}: {erreur}"
+                reponse = (
+                    "Le service est momentanément indisponible. "
+                    "Veuillez réessayer plus tard ou contacter "
+                    "l'accueil de l'hôpital."
+                )
+
+            st.write_stream(ecrire_progressivement(reponse))
+
+            heure_reponse = heure_actuelle()
+            afficher_html(f'<div class="msg-heure">{heure_reponse}</div>')
+
+            if erreur_technique:
+                with st.expander("Détails techniques (pour le développeur)"):
+                    st.code(erreur_technique)
+
+        st.session_state.messages.append(
+            {"role": "user", "content": question_en_cours,
+             "heure": heure_question}
+        )
+        st.session_state.messages.append(
+            {"role": "assistant", "content": reponse,
+             "heure": heure_reponse}
+        )
+
+        nouvelle_reponse = True
+
+if nouvelle_reponse:
+    defiler_vers_le_dernier_message()
+
+
+# =====================================================
+# 11. QUESTIONS SUGGÉRÉES (en bas, sous la conversation)
+# =====================================================
+
+st.markdown(
+    '<div class="suggest-title">✨ Ou choisissez une question fréquente</div>',
+    unsafe_allow_html=True
+)
+
+questions = [
+    "Quels sont les horaires du service ?",
+    "Quels documents dois-je apporter ?",
+    "Où se trouve le service ?",
+    "Quels examens sont disponibles ?"
+]
+
+col1, col2 = st.columns(2)
+
+for i, question in enumerate(questions):
+
+    with col1 if i % 2 == 0 else col2:
+
+        st.button(
+            question,
+            key=f"question_{i}",
+            width="stretch",
+            on_click=definir_question,
+            args=(question,)
+        )
+
+
+# =====================================================
+# 12. PIED DE PAGE
+# =====================================================
+
+st.divider()
+
+afficher_html("""
+<div class="footer">
+
+    <h3 style="color:#35d9ff;">
+        🤖 RadiologyBot AI
+    </h3>
+
+    Assistant intelligent d'information hospitalière
+    basé sur le RAG.
+
+    <br><br>
+
+    ⚠️ Ce chatbot ne remplace pas un médecin
+    et ne réalise aucun diagnostic médical.
+
+    <br><br>
+
+    Prototype de démonstration - Version 1.0
+
+</div>
+""", unsafe_allow_html=True)
+
+
+# =====================================================
+# 13. MENU LATÉRAL
+# =====================================================
+
+with st.sidebar:
+
+    st.title("🤖 RadiologyBot AI")
+
+    st.write(
+        "Assistant intelligent du service de radiologie."
+    )
+
+    st.divider()
+
+    if st.button(
+        "🗑️ Nouvelle conversation",
+        width="stretch"
+    ):
+
+        st.session_state.messages = []
+        st.session_state.pending_question = None
+        st.rerun()
+
+    st.info(
+        "Les réponses sont basées sur les informations "
+        "disponibles dans la base documentaire."
+    )
