@@ -1,4 +1,5 @@
 import base64
+import itertools
 import html as html_lib
 import re
 import time
@@ -9,14 +10,17 @@ import streamlit as st
 
 # Import sécurisé : si la base ou Ollama pose problème, l'application s'affiche quand même
 try:
-    from chatbot import ask_ai, service_pret
+    from chatbot import ask_ai_stream, prechauffer, service_pret
     erreur_import = None
 except Exception as erreur:
-    ask_ai = None
+    ask_ai_stream = None
     erreur_import = erreur
 
     def service_pret():
         return False
+
+    def prechauffer():
+        pass
 
 
 def afficher_html(contenu, **options):
@@ -48,7 +52,7 @@ st.set_page_config(
 
 ROBOT = Path("assets/radiologybot_avatar.png")
 robot_disponible = ROBOT.exists()
-en_ligne = ask_ai is not None and service_pret()
+en_ligne = ask_ai_stream is not None and service_pret()
 
 # True  : robot animé (yeux qui clignotent), dessiné dans le code
 # False : votre image assets/radiologybot_avatar.png
@@ -774,14 +778,27 @@ with st.container(key="fenetre_chat"):
             erreur_technique = None
 
             try:
+                if ask_ai_stream is None:
+                    raise RuntimeError(
+                        f"Moteur RAG indisponible : {erreur_import}"
+                    )
+
+                flux = ask_ai_stream(question_en_cours)
+
+                # Le spinner dure jusqu'au premier mot, puis la réponse s'écrit en direct
                 with st.spinner("RadiologyBot écrit..."):
+                    premier = next(flux, None)
 
-                    if ask_ai is None:
-                        raise RuntimeError(
-                            f"Moteur RAG indisponible : {erreur_import}"
-                        )
-
-                    reponse = ask_ai(question_en_cours)
+                if premier is None:
+                    reponse = (
+                        "Je n'ai pas pu produire une réponse. "
+                        "Veuillez reformuler votre question."
+                    )
+                    st.markdown(reponse)
+                else:
+                    reponse = st.write_stream(
+                        itertools.chain([premier], flux)
+                    )
 
                 if not isinstance(reponse, str) or not reponse.strip():
                     reponse = (
@@ -791,13 +808,20 @@ with st.container(key="fenetre_chat"):
 
             except Exception as erreur:
                 erreur_technique = f"{type(erreur).__name__}: {erreur}"
-                reponse = (
-                    "Le service est momentanément indisponible. "
-                    "Veuillez réessayer plus tard ou contacter "
-                    "l'accueil de l'hôpital."
-                )
-
-            st.write_stream(ecrire_progressivement(reponse))
+                texte_erreur = str(erreur).upper()
+                if any(m in texte_erreur for m in ("429", "RESOURCE_EXHAUSTED", "QUOTA")):
+                    reponse = (
+                        "⏳ Le service reçoit beaucoup de demandes en ce moment. "
+                        "Veuillez patienter environ une minute, puis reposer "
+                        "votre question."
+                    )
+                else:
+                    reponse = (
+                        "Le service est momentanément indisponible. "
+                        "Veuillez réessayer plus tard ou contacter "
+                        "l'accueil de l'hôpital."
+                    )
+                st.markdown(reponse)
 
             heure_reponse = heure_actuelle()
             afficher_html(f'<div class="msg-heure">{heure_reponse}</div>')
@@ -908,3 +932,14 @@ with st.sidebar:
         "Les réponses sont basées sur les informations "
         "disponibles dans la base documentaire."
     )
+
+
+# =====================================================
+# 14. PRÉCHAUFFAGE (après l'affichage de la page)
+# =====================================================
+
+if en_ligne:
+    try:
+        prechauffer()
+    except Exception:
+        pass
