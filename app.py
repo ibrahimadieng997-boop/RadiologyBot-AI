@@ -892,10 +892,22 @@ afficher_html("""
     Assistant intelligent d'information hospitalière
     basé sur le RAG.
 
-    <br><br>
+        <br><br>
 
     ⚠️ Ce chatbot ne remplace pas un médecin
     et ne réalise aucun diagnostic médical.
+
+    <br><br>
+
+    <span style="color:#35d9ff;font-weight:700;">👨‍💻 Développé par</span><br>
+    <b style="color:#ffffff;">Ibrahima Dieng</b><br>
+    Élève ingénieur au Dakar Institute of Technology
+
+    <br><br>
+
+    <span style="color:#35d9ff;font-weight:700;">🎓 Encadré par</span><br>
+    <b style="color:#ffffff;">Mouhamed Naby Dia</b><br>
+    Ingénieur à Sanatel
 
     <br><br>
 
