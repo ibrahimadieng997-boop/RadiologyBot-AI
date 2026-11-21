@@ -62,11 +62,17 @@ def _moteur():
     base = InMemoryVectorStore.from_documents(passages, embeddings)
     retriever = base.as_retriever(search_kwargs={"k": 4})
 
-    # Si vous passez à un modèle Gemini 3 ou plus récent, supprimez temperature.
+    modele = _secret("MODELE_LLM", "gemini-3.8-flash")
+
+    # Gemini 3 et plus récent : on laisse la température par défaut (recommandé).
+    options = {}
+    if modele.startswith(("gemini-1", "gemini-2")):
+        options["temperature"] = 0.1
+
     llm = ChatGoogleGenerativeAI(
-        model=_secret("MODELE_LLM", "gemini-2.5-flash"),
-        temperature=0.1,
+        model=modele,
         google_api_key=cle,
+        **options,
     )
     return retriever, llm
 
