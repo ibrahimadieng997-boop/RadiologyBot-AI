@@ -2831,6 +2831,33 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 [data-testid="stChatInput"] textarea::placeholder {{ color: #64748b !important; -webkit-text-fill-color: #64748b !important; opacity: 1 !important; }}
 [data-testid="stChatInput"] button {{ background: #1560c7 !important; border-radius: 14px !important; color: #ffffff !important; }}
 [data-testid="stChatInput"] button svg {{ fill: #ffffff !important; color: #ffffff !important; }}
+/* ====== VISIBILITÉ : texte blanc éclatant sur bleu de nuit ====== */
+[data-testid="stSidebar"], [data-testid="stSidebar"] * {{ color: #ffffff !important; }}
+[data-testid="stSidebar"] .brand div {{ color: #ffffff !important; font-weight: 800; font-size: 1.3rem; text-shadow: 0 1px 8px rgba(0,0,0,0.5); }}
+[data-testid="stSidebar"] div.stButton > button {{ justify-content: flex-start !important; padding-left: 16px !important; }}
+[data-testid="stSidebar"] div.stButton > button > div {{ justify-content: flex-start !important; width: 100%; }}
+[data-testid="stSidebar"] div.stButton > button p {{ text-align: left; font-weight: 600; font-size: 1.02rem; color: #ffffff !important; }}
+[data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarCollapseButton"] button {{ color: #ffffff !important; fill: #ffffff !important; }}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {{ color: #dbeafe !important; font-weight: 600; }}
+
+/* ====== CHAMP DE LANGUE : bleu de nuit, texte blanc ====== */
+[data-testid="stSidebar"] [data-testid="stSelectbox"] label p {{ font-weight: 700; font-size: 0.98rem; color: #ffffff !important; }}
+[data-testid="stSidebar"] [data-baseweb="select"] > div {{
+    background: #04122e !important; border: 2px solid #5eb4ff !important; border-radius: 14px !important;
+    min-height: 50px; box-shadow: 0 0 0 3px rgba(94,180,255,0.18), 0 6px 18px rgba(0,0,0,0.45);
+}}
+[data-testid="stSidebar"] [data-baseweb="select"] * {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 700; font-size: 1.05rem; }}
+[data-testid="stSidebar"] [data-baseweb="select"] svg {{ fill: #7dd3fc !important; }}
+[data-baseweb="popover"] [data-baseweb="menu"], [data-baseweb="popover"] ul {{ background: #04122e !important; border: 1px solid #5eb4ff; border-radius: 12px; }}
+[data-baseweb="popover"] li {{ background: #04122e !important; }}
+[data-baseweb="popover"] li, [data-baseweb="popover"] li * {{ color: #ffffff !important; font-weight: 600; font-size: 1.02rem; }}
+[data-baseweb="popover"] li:hover, [data-baseweb="popover"] li[aria-selected="true"] {{ background: #0f3f87 !important; }}
+
+/* ====== CHAMP DE SAISIE DU MESSAGE : bleu de nuit, texte blanc ====== */
+[data-testid="stChatInput"], [data-testid="stChatInput"] > div, [data-testid="stChatInput"] > div > div {{ background: #071a3d !important; border-color: #5eb4ff !important; }}
+[data-testid="stChatInput"] {{ border: 2px solid #5eb4ff !important; box-shadow: 0 0 22px rgba(56,189,248,0.28) !important; }}
+[data-testid="stChatInput"] textarea {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; caret-color: #7dd3fc !important; font-weight: 600 !important; font-size: 1.05rem !important; }}
+[data-testid="stChatInput"] textarea::placeholder {{ color: #cfe6ff !important; -webkit-text-fill-color: #cfe6ff !important; opacity: 1 !important; }}
 </style>
 """,
     unsafe_allow_html=True,
@@ -3040,7 +3067,7 @@ for i, message in enumerate(st.session_state.messages):
 # =====================================================
 # 11. SAISIE ET RÉPONSE
 # =====================================================
-saisie = st.chat_input("Écrivez votre message...")
+saisie = st.chat_input("Écrivez en français, bindal ci wolof, or write in English...")
 question = saisie if saisie is not None else st.session_state.suggestion
 st.session_state.suggestion = None
 
