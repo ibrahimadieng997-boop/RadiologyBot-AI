@@ -2720,7 +2720,7 @@ fond_banniere = (
     if PHOTO else "background: linear-gradient(135deg,#cfe3fa,#a9c9f1);"
 )
 fond_carte = (
-    f"background-image: linear-gradient(rgba(10,47,102,0.15), rgba(10,47,102,0.55)), url('{PHOTO}');"
+    f"background-image: linear-gradient(180deg, rgba(8,44,99,0.80) 0%, rgba(8,44,99,0.15) 55%, rgba(8,44,99,0) 100%), url('{PHOTO}');"
     if PHOTO else "background-image: linear-gradient(160deg,#2f6fd6,#0a3a82);"
 )
 
@@ -2757,8 +2757,8 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 [data-testid="stSidebar"] div.stDownloadButton > button p {{ color: #ffffff !important; }}
 .side-card {{
     {fond_carte} background-size: cover; background-position: center;
-    border-radius: 16px; padding: 22px 16px 70px 16px; margin-top: 18px;
-    display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 1.05rem; line-height: 1.25;
+    border-radius: 16px; padding: 18px 16px; margin-top: 18px; height: 240px; background-color: #0a3a82;
+    display: flex; align-items: flex-start; gap: 12px; font-weight: 600; font-size: 1.05rem; line-height: 1.25;
 }}
 .side-card, .side-card * {{ color: #ffffff !important; }}
 
@@ -2775,7 +2775,7 @@ header[data-testid="stHeader"] {{ background: transparent; }}
     background: linear-gradient(100deg,#e4effc 0%,#cfe2f9 60%,#b4d2f5 100%);
     border: 1px solid #dbe6f5; box-shadow: 0 4px 14px rgba(15,63,135,0.08);
 }}
-.banner .photo {{ flex: 0 0 38%; {fond_banniere} -webkit-mask-image: linear-gradient(90deg,#000 70%,transparent); mask-image: linear-gradient(90deg,#000 70%,transparent); }}
+.banner .photo {{ flex: 0 0 36%; min-height: 150px; {fond_banniere} }}
 .banner .txt {{ flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 14px 24px; }}
 .banner .titre {{ display: flex; align-items: center; gap: 14px; }}
 .banner h1 {{ margin: 0; font-size: 2.5rem; font-weight: 800; color: #0f3f87 !important; line-height: 1; padding: 0; }}
