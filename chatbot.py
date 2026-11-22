@@ -299,12 +299,544 @@
 #         memoire[cle] = texte
 # Fin 
 
+# """
+# Moteur RAG de RadiologyBot AI
+# Architecture cloud : Google Gemini + LangChain + Streamlit.
+
+# Base de connaissances : radiologie.txt
+# Langues : français, anglais et wolof.
+# """
+
+# import os
+# import re
+# import time
+# from pathlib import Path
+
+# import streamlit as st
+
+# from langchain_core.vectorstores import InMemoryVectorStore
+# from langchain_google_genai import (
+#     ChatGoogleGenerativeAI,
+#     GoogleGenerativeAIEmbeddings,
+# )
+# from langchain_text_splitters import (
+#     MarkdownHeaderTextSplitter,
+#     RecursiveCharacterTextSplitter,
+# )
+
+
+# # ==========================================================
+# # 1. CONFIGURATION
+# # ==========================================================
+
+# FICHE = Path(__file__).parent / "radiologie.txt"
+
+# LANGUES = {
+#     "fr": "français",
+#     "français": "français",
+#     "french": "français",
+#     "en": "anglais",
+#     "anglais": "anglais",
+#     "english": "anglais",
+#     "wo": "wolof",
+#     "wolof": "wolof",
+# }
+
+
+# # ==========================================================
+# # 2. GESTION DES SECRETS
+# # ==========================================================
+
+# def _secret(nom: str, defaut: str = "") -> str:
+#     """Lit un secret Streamlit ou une variable d'environnement."""
+
+#     try:
+#         valeur = st.secrets.get(nom)
+#     except Exception:
+#         valeur = None
+
+#     return str(valeur or os.environ.get(nom, defaut))
+
+
+# def service_pret() -> bool:
+#     """Vérifie la présence de la clé API et du document."""
+
+#     return (
+#         bool(_secret("GOOGLE_API_KEY"))
+#         and FICHE.exists()
+#         and FICHE.stat().st_size > 0
+#     )
+
+
+# def normaliser_langue(langue: str = "français") -> str:
+#     """Convertit les différentes écritures vers une langue reconnue."""
+
+#     valeur = str(langue or "français").strip().lower()
+
+#     return LANGUES.get(valeur, "français")
+
+
+# # ==========================================================
+# # 3. CONSTRUCTION DU MOTEUR RAG
+# # ==========================================================
+
+# @st.cache_resource(show_spinner=False)
+# def _moteur():
+#     """Construit les embeddings, la base vectorielle et Gemini."""
+
+#     cle = _secret("GOOGLE_API_KEY")
+
+#     if not cle:
+#         raise RuntimeError(
+#             "La clé GOOGLE_API_KEY est absente. "
+#             "Configure-la dans les Secrets Streamlit."
+#         )
+
+#     if not FICHE.exists():
+#         raise FileNotFoundError(
+#             f"Le fichier {FICHE.name} est introuvable."
+#         )
+
+#     texte = FICHE.read_text(encoding="utf-8").strip()
+
+#     if not texte:
+#         raise ValueError(
+#             "Le fichier radiologie.txt est vide."
+#         )
+
+#     # Embeddings Google
+#     embeddings = GoogleGenerativeAIEmbeddings(
+#         model=_secret(
+#             "MODELE_EMBEDDINGS",
+#             "gemini-embedding-001"
+#         ),
+#         google_api_key=cle,
+#     )
+
+#     # Découpage par sections Markdown
+#     sections = MarkdownHeaderTextSplitter(
+#         headers_to_split_on=[
+#             ("##", "section")
+#         ],
+#         strip_headers=False,
+#     ).split_text(texte)
+
+#     # Découpage des sections en petits passages
+#     passages = RecursiveCharacterTextSplitter(
+#         chunk_size=900,
+#         chunk_overlap=100,
+#     ).split_documents(sections)
+
+#     if not passages:
+#         raise ValueError(
+#             "Aucun passage exploitable dans radiologie.txt."
+#         )
+
+#     # Création de la base vectorielle
+#     base = InMemoryVectorStore.from_documents(
+#         passages,
+#         embeddings,
+#     )
+
+#     retriever = base.as_retriever(
+#         search_kwargs={"k": 4}
+#     )
+
+#     # Modèle principal
+#     modele_principal = _secret(
+#         "MODELE_LLM",
+#         "gemini-2.5-flash"
+#     )
+
+#     llm_principal = ChatGoogleGenerativeAI(
+#         model=modele_principal,
+#         google_api_key=cle,
+#         temperature=0.1,
+#         max_retries=1,
+#     )
+
+#     modeles = [llm_principal]
+
+#     # Modèle de secours facultatif
+#     modele_secours = _secret("MODELE_SECOURS")
+
+#     if modele_secours and modele_secours != modele_principal:
+
+#         llm_secours = ChatGoogleGenerativeAI(
+#             model=modele_secours,
+#             google_api_key=cle,
+#             temperature=0.1,
+#             max_retries=1,
+#         )
+
+#         modeles.append(llm_secours)
+
+#     return retriever, modeles
+
+
+# # ==========================================================
+# # 4. PRÉCHAUFFAGE
+# # ==========================================================
+
+# def prechauffer():
+#     """Prépare le moteur au démarrage."""
+
+#     _moteur()
+
+
+# # ==========================================================
+# # 5. CACHE DES RÉPONSES
+# # ==========================================================
+
+# @st.cache_resource(show_spinner=False)
+# def _cache_reponses():
+#     """Conserve les réponses fréquentes."""
+
+#     return {}
+
+
+# # ==========================================================
+# # 6. EXTRACTION DU TEXTE
+# # ==========================================================
+
+# def _texte(reponse) -> str:
+#     """Extrait le texte d'une réponse LangChain."""
+
+#     contenu = getattr(reponse, "content", None)
+
+#     if contenu is None:
+#         valeur = getattr(reponse, "text", "")
+#         if callable(valeur):
+#             valeur = valeur()
+#         return str(valeur or "")
+
+#     if isinstance(contenu, str):
+#         return contenu
+
+#     if isinstance(contenu, list):
+#         morceaux = []
+
+#         for bloc in contenu:
+#             if isinstance(bloc, dict):
+#                 morceaux.append(str(bloc.get("text", "")))
+#             else:
+#                 morceaux.append(str(bloc))
+
+#         return "".join(morceaux)
+
+#     return str(contenu)
+
+
+# # ==========================================================
+# # 7. MESSAGES DE SECOURS
+# # ==========================================================
+
+# def _message_indisponible(langue: str) -> str:
+#     """Retourne un message lorsque l'information est absente."""
+
+#     messages = {
+#         "français": (
+#             "Je ne trouve pas cette information dans les "
+#             "documents du service de radiologie. "
+#             "Veuillez contacter l'accueil de l'hôpital."
+#         ),
+#         "anglais": (
+#             "I cannot find this information in the radiology "
+#             "department documents. Please contact the hospital reception."
+#         ),
+#         "wolof": (
+#             "Xibaar bii gisuma ko ci kayiti departema radiologie bi. "
+#             "Jëfandikool accueil bu lopitaal bi ngir am leeral."
+#         ),
+#     }
+
+#     return messages[langue]
+
+
+# # ==========================================================
+# # 8. CONSTRUCTION DU PROMPT MULTILINGUE
+# # ==========================================================
+
+# def _construire_prompt(
+#     contexte: str,
+#     question: str,
+#     langue: str = "français",
+# ) -> str:
+
+#     langue = normaliser_langue(langue)
+
+#     return f"""
+# Tu es RadiologyBot AI, un assistant d'information
+# du service de radiologie de l'hôpital régional de Thiès.
+
+# MISSION :
+# Répondre clairement aux questions des patients
+# concernant le fonctionnement du service.
+
+# LANGUE OBLIGATOIRE :
+# La réponse doit être entièrement rédigée en {langue}.
+
+# RÈGLES IMPORTANTES :
+
+# 1. Utilise uniquement les informations présentes dans le contexte.
+# 2. N'invente jamais d'horaires, de tarifs ou de prestations.
+# 3. Si une information est absente, indique-le clairement.
+# 4. Ne donne jamais de diagnostic médical.
+# 5. Ne prescris aucun médicament.
+# 6. Pour une question médicale personnelle, oriente le patient
+#    vers un professionnel de santé.
+# 7. Utilise des phrases simples et compréhensibles.
+# 8. Ne présente jamais une information inventée comme une
+#    information officielle de l'hôpital.
+# 9. Si le contexte ne permet pas de répondre, dis-le dans
+#    la langue demandée.
+
+# CONTEXTE DOCUMENTAIRE :
+
+# {contexte}
+
+# QUESTION DU PATIENT :
+
+# {question}
+
+# RÉPONSE EN {langue.upper()} :
+# """
+
+
+# # ==========================================================
+# # 9. GESTION DES ERREURS GEMINI
+# # ==========================================================
+
+# def _est_quota(erreur) -> bool:
+
+#     texte = str(erreur).upper()
+
+#     return any(
+#         mot in texte
+#         for mot in (
+#             "429",
+#             "RESOURCE_EXHAUSTED",
+#             "QUOTA",
+#         )
+#     )
+
+
+# def _est_surcharge(erreur) -> bool:
+
+#     texte = str(erreur).upper()
+
+#     return any(
+#         mot in texte
+#         for mot in (
+#             "503",
+#             "UNAVAILABLE",
+#             "OVERLOADED",
+#             "HIGH DEMAND",
+#         )
+#     )
+
+
+# # ==========================================================
+# # 10. RECHERCHE DOCUMENTAIRE
+# # ==========================================================
+
+# def _rechercher(question: str):
+#     """Recherche les passages les plus pertinents."""
+
+#     retriever, modeles = _moteur()
+
+#     documents = retriever.invoke(question)
+
+#     return documents, modeles
+
+
+# # ==========================================================
+# # 11. GÉNÉRATION CLASSIQUE
+# # ==========================================================
+
+# def ask_ai(
+#     question: str,
+#     langue: str = "français",
+# ) -> str:
+#     """Génère une réponse complète."""
+
+#     question = str(question or "").strip()
+#     langue = normaliser_langue(langue)
+
+#     if not question:
+#         return "Veuillez saisir une question."
+
+#     documents, modeles = _rechercher(question)
+
+#     if not documents:
+#         return _message_indisponible(langue)
+
+#     contexte = "\n\n".join(
+#         document.page_content
+#         for document in documents
+#     )
+
+#     prompt = _construire_prompt(
+#         contexte,
+#         question,
+#         langue,
+#     )
+
+#     derniere_erreur = None
+
+#     for modele in modeles:
+#         try:
+#             reponse = modele.invoke(prompt)
+#             resultat = _texte(reponse).strip()
+
+#             if resultat:
+#                 return resultat
+
+#         except Exception as erreur:
+#             derniere_erreur = erreur
+
+#             if _est_quota(erreur) or _est_surcharge(erreur):
+#                 continue
+
+#             continue
+
+#     if derniere_erreur:
+#         raise RuntimeError(
+#             "Impossible de générer une réponse avec Gemini. "
+#             "Vérifie la clé API, le modèle et ton quota."
+#         ) from derniere_erreur
+
+#     return _message_indisponible(langue)
+
+
+# # ==========================================================
+# # 12. GÉNÉRATION AVEC STREAMING
+# # ==========================================================
+
+# def ask_ai_stream(
+#     question: str,
+#     langue: str = "français",
+# ):
+#     """
+#     Génère une réponse progressivement.
+
+#     Exemple :
+#     for morceau in ask_ai_stream(question, langue):
+#         st.write(morceau)
+#     """
+
+#     question = str(question or "").strip()
+#     langue = normaliser_langue(langue)
+
+#     if not question:
+#         yield "Veuillez saisir une question."
+#         return
+
+#     memoire = _cache_reponses()
+
+#     # La langue fait partie de la clé du cache
+#     cle = (
+#         langue,
+#         " ".join(question.lower().split()),
+#     )
+
+#     # Réponse déjà disponible
+#     if cle in memoire:
+
+#         for morceau in re.split(
+#             r"(\s+)",
+#             memoire[cle],
+#         ):
+#             if morceau:
+#                 yield morceau
+
+#         return
+
+#     documents, modeles = _rechercher(question)
+
+#     if not documents:
+#         yield _message_indisponible(langue)
+#         return
+
+#     contexte = "\n\n".join(
+#         document.page_content
+#         for document in documents
+#     )
+
+#     prompt = _construire_prompt(
+#         contexte,
+#         question,
+#         langue,
+#     )
+
+#     texte_complet = ""
+#     derniere_erreur = None
+
+#     # Essai des modèles disponibles
+#     for modele in modeles:
+
+#         reussi = False
+
+#         for tentative in range(2):
+
+#             try:
+
+#                 for morceau in modele.stream(prompt):
+
+#                     extrait = _texte(morceau)
+
+#                     if extrait:
+#                         texte_complet += extrait
+#                         yield extrait
+
+#                 reussi = True
+#                 break
+
+#             except Exception as erreur:
+
+#                 derniere_erreur = erreur
+
+#                 # Si des morceaux ont déjà été envoyés,
+#                 # on ne peut plus recommencer sans dupliquer.
+#                 if texte_complet:
+#                     raise
+
+#                 # Quota : passer directement au modèle suivant
+#                 if _est_quota(erreur):
+#                     break
+
+#                 # Surcharge : une seule nouvelle tentative
+#                 if _est_surcharge(erreur) and tentative == 0:
+#                     time.sleep(2)
+#                     continue
+
+#                 break
+
+#         if reussi:
+#             break
+
+#     # Tous les modèles ont échoué
+#     if not texte_complet.strip():
+
+#         if derniere_erreur:
+#             raise RuntimeError(
+#                 "Les modèles Gemini ne sont pas disponibles. "
+#                 "Vérifie ta clé API, ton quota et les noms des modèles."
+#             ) from derniere_erreur
+
+#         yield _message_indisponible(langue)
+#         return
+
+#     # Enregistrer uniquement les réponses complètes
+#     memoire[cle] = texte_complet.strip()
+#Fin 
+# nouveau
 """
 Moteur RAG de RadiologyBot AI
 Architecture cloud : Google Gemini + LangChain + Streamlit.
 
 Base de connaissances : radiologie.txt
-Langues : français, anglais et wolof.
+Langues : wolof, français et anglais.
 """
 
 import os
@@ -340,6 +872,42 @@ LANGUES = {
     "english": "anglais",
     "wo": "wolof",
     "wolof": "wolof",
+}
+
+# Correspondances utiles pour aider la recherche vectorielle
+# quand un patient écrit en wolof normal ou en anglais.
+MOTS_CLES_THEME = {
+    "waxtu": "horaires ouverture fermeture heures",
+    "ubbeeku": "horaires ouverture ouvert heures",
+    "ubbi": "horaires ouverture ouvert heures",
+    "kayit": "documents dossier ordonnance carte identité",
+    "indi": "apporter documents ordonnance",
+    "ekografi": "échographie préparation examen",
+    "scanner": "scanner tomodensitométrie préparation examen",
+    "irm": "irm préparation examen",
+    "radio": "radiographie rayon x examen",
+    "examen": "examens prestations imagerie",
+    "laaj": "rendez-vous prise de rendez-vous",
+    "randez": "rendez-vous prise de rendez-vous",
+    "wute": "rendez-vous prise de rendez-vous",
+    "barab": "adresse localisation accès où se trouve",
+    "fan": "où localisation adresse accès",
+    "foo": "où localisation adresse accès",
+    "ana": "où localisation adresse accès",
+    "njëg": "tarif prix coût paiement",
+    "alël": "tarif prix coût paiement",
+    "hours": "horaires ouverture heures",
+    "open": "horaires ouverture ouvert",
+    "bring": "documents dossier ordonnance apporter",
+    "documents": "documents dossier ordonnance",
+    "appointment": "rendez-vous prise de rendez-vous",
+    "ultrasound": "échographie préparation examen",
+    "prepare": "préparation examen",
+    "preparation": "préparation examen",
+    "results": "résultats compte rendu",
+    "where": "adresse localisation accès où se trouve",
+    "cost": "tarif prix coût",
+    "price": "tarif prix coût",
 }
 
 
@@ -404,7 +972,6 @@ def _moteur():
             "Le fichier radiologie.txt est vide."
         )
 
-    # Embeddings Google
     embeddings = GoogleGenerativeAIEmbeddings(
         model=_secret(
             "MODELE_EMBEDDINGS",
@@ -413,7 +980,6 @@ def _moteur():
         google_api_key=cle,
     )
 
-    # Découpage par sections Markdown
     sections = MarkdownHeaderTextSplitter(
         headers_to_split_on=[
             ("##", "section")
@@ -421,7 +987,6 @@ def _moteur():
         strip_headers=False,
     ).split_text(texte)
 
-    # Découpage des sections en petits passages
     passages = RecursiveCharacterTextSplitter(
         chunk_size=900,
         chunk_overlap=100,
@@ -432,7 +997,6 @@ def _moteur():
             "Aucun passage exploitable dans radiologie.txt."
         )
 
-    # Création de la base vectorielle
     base = InMemoryVectorStore.from_documents(
         passages,
         embeddings,
@@ -442,7 +1006,6 @@ def _moteur():
         search_kwargs={"k": 4}
     )
 
-    # Modèle principal
     modele_principal = _secret(
         "MODELE_LLM",
         "gemini-2.5-flash"
@@ -457,7 +1020,6 @@ def _moteur():
 
     modeles = [llm_principal]
 
-    # Modèle de secours facultatif
     modele_secours = _secret("MODELE_SECOURS")
 
     if modele_secours and modele_secours != modele_principal:
@@ -565,6 +1127,12 @@ def _construire_prompt(
 
     langue = normaliser_langue(langue)
 
+    consigne_style = (
+        "Utilise un wolof courant, naturel, clair et poli, compréhensible par tous les patients."
+        if langue == "wolof"
+        else "Utilise des phrases simples, claires et compréhensibles."
+    )
+
     return f"""
 Tu es RadiologyBot AI, un assistant d'information
 du service de radiologie de l'hôpital régional de Thiès.
@@ -575,6 +1143,7 @@ concernant le fonctionnement du service.
 
 LANGUE OBLIGATOIRE :
 La réponse doit être entièrement rédigée en {langue}.
+{consigne_style}
 
 RÈGLES IMPORTANTES :
 
@@ -585,7 +1154,7 @@ RÈGLES IMPORTANTES :
 5. Ne prescris aucun médicament.
 6. Pour une question médicale personnelle, oriente le patient
    vers un professionnel de santé.
-7. Utilise des phrases simples et compréhensibles.
+7. {consigne_style}
 8. Ne présente jamais une information inventée comme une
    information officielle de l'hôpital.
 9. Si le contexte ne permet pas de répondre, dis-le dans
@@ -637,17 +1206,48 @@ def _est_surcharge(erreur) -> bool:
 
 
 # ==========================================================
-# 10. RECHERCHE DOCUMENTAIRE
+# 10. RECHERCHE DOCUMENTAIRE ENRICHIE
 # ==========================================================
 
-def _rechercher(question: str):
-    """Recherche les passages les plus pertinents."""
+def _requete_recherche(question: str, langue: str) -> str:
+    """Enrichit la requête de recherche pour mieux trouver les passages."""
+
+    tokens = re.findall(r"[\w'’\-àâäçéèêëîïôöùûüÿñœ]+", question.lower())
+    ajouts = []
+
+    for tok in tokens:
+        if tok in MOTS_CLES_THEME:
+            ajouts.append(MOTS_CLES_THEME[tok])
+
+    if langue in ("wolof", "anglais"):
+        ajouts.append("service de radiologie examens préparation horaires documents")
+
+    if not ajouts:
+        return question
+
+    return f"{question} — {' '.join(ajouts)}"
+
+
+def _rechercher(question: str, langue: str = "français"):
+    """Recherche les passages les plus pertinents sans doublons."""
 
     retriever, modeles = _moteur()
 
-    documents = retriever.invoke(question)
+    requete = _requete_recherche(question, langue)
+    documents = retriever.invoke(requete)
 
-    return documents, modeles
+    if not documents and requete != question:
+        documents = retriever.invoke(question)
+
+    uniques = []
+    vus = set()
+    for doc in documents:
+        cle = doc.page_content.strip()
+        if cle and cle not in vus:
+            vus.add(cle)
+            uniques.append(doc)
+
+    return uniques, modeles
 
 
 # ==========================================================
@@ -666,7 +1266,7 @@ def ask_ai(
     if not question:
         return "Veuillez saisir une question."
 
-    documents, modeles = _rechercher(question)
+    documents, modeles = _rechercher(question, langue)
 
     if not documents:
         return _message_indisponible(langue)
@@ -734,13 +1334,11 @@ def ask_ai_stream(
 
     memoire = _cache_reponses()
 
-    # La langue fait partie de la clé du cache
     cle = (
         langue,
         " ".join(question.lower().split()),
     )
 
-    # Réponse déjà disponible
     if cle in memoire:
 
         for morceau in re.split(
@@ -752,7 +1350,7 @@ def ask_ai_stream(
 
         return
 
-    documents, modeles = _rechercher(question)
+    documents, modeles = _rechercher(question, langue)
 
     if not documents:
         yield _message_indisponible(langue)
@@ -772,7 +1370,6 @@ def ask_ai_stream(
     texte_complet = ""
     derniere_erreur = None
 
-    # Essai des modèles disponibles
     for modele in modeles:
 
         reussi = False
@@ -796,16 +1393,12 @@ def ask_ai_stream(
 
                 derniere_erreur = erreur
 
-                # Si des morceaux ont déjà été envoyés,
-                # on ne peut plus recommencer sans dupliquer.
                 if texte_complet:
                     raise
 
-                # Quota : passer directement au modèle suivant
                 if _est_quota(erreur):
                     break
 
-                # Surcharge : une seule nouvelle tentative
                 if _est_surcharge(erreur) and tentative == 0:
                     time.sleep(2)
                     continue
@@ -815,7 +1408,6 @@ def ask_ai_stream(
         if reussi:
             break
 
-    # Tous les modèles ont échoué
     if not texte_complet.strip():
 
         if derniere_erreur:
@@ -827,6 +1419,5 @@ def ask_ai_stream(
         yield _message_indisponible(langue)
         return
 
-    # Enregistrer uniquement les réponses complètes
     memoire[cle] = texte_complet.strip()
 
