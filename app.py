@@ -437,19 +437,7 @@
 #     )
 
 
-# # =====================================================
-# # 15. PIED DE PAGE
-# # =====================================================
-# st.divider()
-
-# st.caption(
-#     "RadiologyBot AI — Prototype de démonstration. "
-#     "Les informations doivent être vérifiées et validées "
-#     "par le personnel hospitalier."
-# )
-# Fin coe
-# nouveau
-import re
+# #import re
 from datetime import datetime
 from pathlib import Path
 
@@ -635,46 +623,58 @@ MESSAGE_ACCUEIL = (
 
 
 # =====================================================
-# 5. LE ROBOT (SVG animé : yeux qui clignotent)
+# 5. LE ROBOT (SVG animé : yeux qui clignotent, main qui salue)
 # =====================================================
 ROBOT_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="{size}" height="{size}">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 270" width="{size}" height="{size}">
   <style>
     .rb-eye {{ transform-box: fill-box; transform-origin: center; animation: rb-blink 4s infinite; }}
     .rb-eye2 {{ animation-delay: 0.02s; }}
     .rb-ant {{ animation: rb-pulse 1.6s ease-in-out infinite; }}
     .rb-bot {{ {float_anim} }}
     .rb-scan {{ animation: rb-scan 3s ease-in-out infinite; }}
+    .rb-wave {{ transform-origin: 176px 178px; animation: rb-wave 2.4s ease-in-out infinite; }}
+    .rb-shadow {{ transform-box: fill-box; transform-origin: center; animation: rb-shadow 3.5s ease-in-out infinite; }}
+    .rb-core {{ animation: rb-pulse 2s ease-in-out infinite; }}
     @keyframes rb-blink {{ 0%,90%,100% {{ transform: scaleY(1); }} 94% {{ transform: scaleY(0.07); }} }}
     @keyframes rb-pulse {{ 0%,100% {{ opacity: 1; }} 50% {{ opacity: 0.25; }} }}
-    @keyframes rb-float {{ 0%,100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-5px); }} }}
-    @keyframes rb-scan {{ 0%,100% {{ opacity: 0.15; }} 50% {{ opacity: 0.6; }} }}
+    @keyframes rb-float {{ 0%,100% {{ transform: translateY(0); }} 50% {{ transform: translateY(-8px); }} }}
+    @keyframes rb-scan {{ 0%,100% {{ opacity: 0.1; }} 50% {{ opacity: 0.55; }} }}
+    @keyframes rb-wave {{ 0%,100% {{ transform: rotate(-8deg); }} 50% {{ transform: rotate(22deg); }} }}
+    @keyframes rb-shadow {{ 0%,100% {{ transform: scale(1); opacity: 0.35; }} 50% {{ transform: scale(0.85); opacity: 0.2; }} }}
   </style>
   <defs>
     <linearGradient id="rbHead" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#bcdcff"/>
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9f5de"/>
     </linearGradient>
     <linearGradient id="rbBody" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2b8cff"/><stop offset="1" stop-color="#0b4fb3"/>
+      <stop offset="0" stop-color="#1fbf83"/><stop offset="1" stop-color="#075c3d"/>
     </linearGradient>
     <radialGradient id="rbEye" cx="0.5" cy="0.4" r="0.6">
-      <stop offset="0" stop-color="#e8fdff"/><stop offset="0.5" stop-color="#4fe3ff"/><stop offset="1" stop-color="#0a9bd8"/>
+      <stop offset="0" stop-color="#f2fff8"/><stop offset="0.5" stop-color="#5dffb0"/><stop offset="1" stop-color="#0fae6b"/>
     </radialGradient>
   </defs>
+  <ellipse class="rb-shadow" cx="120" cy="256" rx="52" ry="8" fill="#000000"/>
   <g class="rb-bot">
-    <line x1="100" y1="24" x2="100" y2="44" stroke="#5aa9ff" stroke-width="5" stroke-linecap="round"/>
-    <circle class="rb-ant" cx="100" cy="17" r="8" fill="#4fe3ff"/>
-    <rect x="29" y="72" width="12" height="38" rx="6" fill="#2b8cff"/>
-    <rect x="159" y="72" width="12" height="38" rx="6" fill="#2b8cff"/>
-    <rect x="40" y="44" width="120" height="92" rx="30" fill="url(#rbHead)" stroke="#2b8cff" stroke-width="3"/>
-    <rect x="54" y="62" width="92" height="56" rx="22" fill="#05234a"/>
-    <rect class="rb-scan" x="60" y="66" width="80" height="8" rx="4" fill="#4fe3ff"/>
-    <ellipse class="rb-eye" cx="80" cy="88" rx="12" ry="14" fill="url(#rbEye)"/>
-    <ellipse class="rb-eye rb-eye2" cx="120" cy="88" rx="12" ry="14" fill="url(#rbEye)"/>
-    <path d="M86 108 Q100 118 114 108" fill="none" stroke="#4fe3ff" stroke-width="4" stroke-linecap="round"/>
-    <rect x="64" y="142" width="72" height="46" rx="16" fill="url(#rbBody)"/>
-    <rect x="94" y="152" width="12" height="28" rx="3" fill="#ffffff"/>
-    <rect x="86" y="160" width="28" height="12" rx="3" fill="#ffffff"/>
+    <line x1="120" y1="30" x2="120" y2="54" stroke="#34d399" stroke-width="6" stroke-linecap="round"/>
+    <circle class="rb-ant" cx="120" cy="22" r="10" fill="#5dffb0"/>
+    <rect x="36" y="86" width="14" height="46" rx="7" fill="#10b981"/>
+    <rect x="190" y="86" width="14" height="46" rx="7" fill="#10b981"/>
+    <rect x="50" y="54" width="140" height="108" rx="38" fill="url(#rbHead)" stroke="#10b981" stroke-width="4"/>
+    <rect x="66" y="74" width="108" height="68" rx="26" fill="#02261a"/>
+    <rect class="rb-scan" x="74" y="80" width="92" height="9" rx="4" fill="#5dffb0"/>
+    <ellipse class="rb-eye" cx="98" cy="106" rx="14" ry="17" fill="url(#rbEye)"/>
+    <ellipse class="rb-eye rb-eye2" cx="142" cy="106" rx="14" ry="17" fill="url(#rbEye)"/>
+    <path d="M104 128 Q120 140 136 128" fill="none" stroke="#5dffb0" stroke-width="5" stroke-linecap="round"/>
+    <rect x="80" y="168" width="80" height="70" rx="22" fill="url(#rbBody)"/>
+    <rect x="114" y="180" width="12" height="32" rx="3" fill="#ffffff"/>
+    <rect x="104" y="190" width="32" height="12" rx="3" fill="#ffffff"/>
+    <circle class="rb-core" cx="120" cy="224" r="5" fill="#5dffb0"/>
+    <rect x="58" y="176" width="14" height="46" rx="7" fill="#10b981"/>
+    <g class="rb-wave">
+      <rect x="168" y="172" width="14" height="48" rx="7" fill="#10b981"/>
+      <circle cx="175" cy="224" r="10" fill="#c9f5de" stroke="#10b981" stroke-width="3"/>
+    </g>
   </g>
 </svg>
 """
@@ -700,7 +700,7 @@ AVATAR_BOT = avatar_robot()
 
 
 # =====================================================
-# 6. DESIGN BLEU
+# 6. DESIGN VERT FONCÉ
 # =====================================================
 st.markdown(
     """
@@ -709,98 +709,124 @@ st.markdown(
 
     .stApp {
         background:
-            radial-gradient(circle at 15% 10%, rgba(56,160,255,0.35) 0%, transparent 40%),
-            radial-gradient(circle at 90% 20%, rgba(0,212,255,0.25) 0%, transparent 35%),
-            linear-gradient(180deg, #04122b 0%, #07254d 55%, #0a3a73 100%);
+            radial-gradient(circle at 12% 8%, rgba(16,185,129,0.30) 0%, transparent 38%),
+            radial-gradient(circle at 92% 18%, rgba(110,231,183,0.16) 0%, transparent 34%),
+            linear-gradient(rgba(110,231,183,0.045) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(110,231,183,0.045) 1px, transparent 1px),
+            linear-gradient(180deg, #021510 0%, #05281c 55%, #08402b 100%);
+        background-size: auto, auto, 42px 42px, 42px 42px, auto;
         background-attachment: fixed;
     }
 
     .main .block-container {
-        max-width: 1050px;
+        max-width: 1100px;
         padding-top: 1.5rem;
         padding-bottom: 6rem;
     }
 
-    /* Textes sur fond sombre */
     .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp label,
-    .stApp span, .stApp li { color: #eaf4ff; }
+    .stApp span, .stApp li { color: #e8fff3; }
 
     /* ---------- Héros ---------- */
     .hero {
-        display: flex; align-items: center; gap: 28px;
-        background: linear-gradient(135deg, rgba(20,110,230,0.55), rgba(0,200,255,0.18));
-        border: 1px solid rgba(120,200,255,0.35);
-        backdrop-filter: blur(10px);
-        border-radius: 26px;
-        padding: 26px 34px;
-        margin-bottom: 18px;
-        box-shadow: 0 18px 50px rgba(0,60,160,0.45), inset 0 0 40px rgba(80,180,255,0.10);
+        position: relative; overflow: hidden;
+        display: flex; align-items: center; gap: 40px;
+        background: linear-gradient(135deg, rgba(8,90,60,0.75), rgba(3,35,25,0.80));
+        border: 1px solid rgba(110,231,183,0.45);
+        border-radius: 30px;
+        padding: 34px 44px;
+        margin-bottom: 22px;
+        box-shadow: 0 22px 60px rgba(0,0,0,0.55),
+                    0 0 50px rgba(16,185,129,0.25),
+                    inset 0 0 60px rgba(52,211,153,0.10);
     }
-    .hero-robot { flex: 0 0 auto; filter: drop-shadow(0 0 22px rgba(79,227,255,0.65)); }
+    .hero::before {
+        content: ""; position: absolute; width: 420px; height: 420px; right: -120px; top: -160px;
+        background: radial-gradient(circle, rgba(93,255,176,0.30), transparent 65%);
+        animation: glow 6s ease-in-out infinite;
+    }
+    @keyframes glow { 0%,100% {opacity:0.5; transform:scale(1);} 50% {opacity:1; transform:scale(1.15);} }
+    .hero-robot {
+        position: relative; flex: 0 0 auto; line-height: 0;
+        filter: drop-shadow(0 0 28px rgba(93,255,176,0.55));
+    }
+    .hero-text { position: relative; }
     .hero h1 {
-        margin: 0 0 6px 0; font-size: 2.6rem; font-weight: 800; letter-spacing: 0.5px;
-        background: linear-gradient(90deg, #ffffff, #8fe6ff);
+        margin: 0 0 8px 0; font-size: 3.4rem; font-weight: 800; letter-spacing: 0.5px; line-height: 1.05;
+        background: linear-gradient(90deg, #ffffff, #86efc0 60%, #34d399);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    .hero p { margin: 0 0 12px 0; color: #cfe8ff; font-size: 1.05rem; }
+    .hero p { margin: 0 0 16px 0; color: #b9f3d6; font-size: 1.2rem; }
     .badges span {
-        display: inline-block; margin-right: 8px; padding: 5px 14px;
-        border-radius: 999px; font-size: 0.85rem; font-weight: 600;
-        background: rgba(255,255,255,0.12); border: 1px solid rgba(160,220,255,0.45);
-        color: #eaf8ff;
+        display: inline-block; margin: 0 8px 6px 0; padding: 6px 16px;
+        border-radius: 999px; font-size: 0.9rem; font-weight: 600;
+        background: rgba(110,231,183,0.12); border: 1px solid rgba(110,231,183,0.50);
+        color: #e8fff3;
     }
     .status {
-        display: inline-block; margin-top: 12px; padding: 5px 14px; border-radius: 999px;
-        font-size: 0.85rem; font-weight: 600;
-        background: rgba(0,0,0,0.25); border: 1px solid rgba(160,220,255,0.35);
+        display: inline-block; margin-top: 10px; padding: 6px 16px; border-radius: 999px;
+        font-size: 0.9rem; font-weight: 600;
+        background: rgba(0,0,0,0.35); border: 1px solid rgba(110,231,183,0.35);
     }
     .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px;
            animation: dotpulse 1.5s infinite; }
-    .dot.on  { background:#2be28a; box-shadow:0 0 10px #2be28a; }
-    .dot.off { background:#ffb020; box-shadow:0 0 10px #ffb020; }
+    .dot.on  { background:#5dffb0; box-shadow:0 0 12px #5dffb0; }
+    .dot.off { background:#ffb020; box-shadow:0 0 12px #ffb020; }
     @keyframes dotpulse { 0%,100% {opacity:1;} 50% {opacity:0.35;} }
+
+    @media (max-width: 760px) {
+        .hero { flex-direction: column; text-align: center; padding: 26px 20px; gap: 14px; }
+        .hero h1 { font-size: 2.4rem; }
+    }
 
     /* ---------- Avertissement ---------- */
     .notice {
-        background: rgba(255,248,231,0.95); border-left: 5px solid #e0a82e;
-        color: #5d4a1d !important; padding: 13px 18px; border-radius: 12px;
+        background: rgba(255,247,222,0.96); border-left: 5px solid #d9a21f;
+        color: #4d3b0f !important; padding: 13px 18px; border-radius: 12px;
         margin: 14px 0 20px 0; font-size: 0.92rem;
     }
 
     /* ---------- Boutons ---------- */
     div.stButton > button, div.stDownloadButton > button {
-        border-radius: 14px; min-height: 48px; font-weight: 600;
-        color: #ffffff; background: linear-gradient(135deg, #1976f2, #0fb4ff);
-        border: 1px solid rgba(160,220,255,0.5);
-        box-shadow: 0 6px 18px rgba(0,100,220,0.35);
+        border-radius: 14px; min-height: 50px; font-weight: 600;
+        color: #ffffff; background: linear-gradient(135deg, #0c7a53, #14b378);
+        border: 1px solid rgba(110,231,183,0.55);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.35);
         transition: all 0.2s ease;
     }
     div.stButton > button:hover, div.stDownloadButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 26px rgba(0,180,255,0.55);
+        box-shadow: 0 10px 28px rgba(52,211,153,0.50);
         border-color: #ffffff; color: #ffffff;
     }
-    div.stDownloadButton > button:disabled { opacity: 0.45; }
+    div.stDownloadButton > button:disabled { opacity: 0.4; }
 
     /* ---------- Conversation ---------- */
     [data-testid="stChatMessage"] {
-        background: rgba(255,255,255,0.08);
-        border: 1px solid rgba(140,200,255,0.25);
-        border-radius: 18px; padding: 14px 18px; margin-bottom: 12px;
-        backdrop-filter: blur(6px);
+        background: rgba(8,70,48,0.55);
+        border: 1px solid rgba(110,231,183,0.30);
+        border-radius: 20px; padding: 16px 20px; margin-bottom: 14px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    }
+    [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+        background: rgba(20,179,120,0.28);
+        border-color: rgba(134,239,192,0.55);
     }
     [data-testid="stChatMessage"] p,
-    [data-testid="stChatMessage"] li { color: #f2f8ff; font-size: 1.02rem; }
-    [data-testid="stChatMessage"] img { border-radius: 50%; background: #eaf4ff; }
+    [data-testid="stChatMessage"] li { color: #f0fff7; font-size: 1.04rem; line-height: 1.6; }
+    [data-testid="stChatMessage"] img { border-radius: 50%; background: #d9fbe9; padding: 2px; }
 
-    /* Champ de saisie */
+    /* ---------- Champ de saisie ---------- */
     [data-testid="stChatInput"] {
-        border-radius: 18px; border: 2px solid #3fb8ff;
-        box-shadow: 0 0 24px rgba(63,184,255,0.45);
+        background: #eafff4;
+        border-radius: 18px; border: 2px solid #34d399;
+        box-shadow: 0 0 26px rgba(52,211,153,0.50);
     }
+    [data-testid="stChatInput"] textarea { color: #053a27 !important; }
+    [data-testid="stChatInput"] textarea::placeholder { color: #3f7a63 !important; }
     [data-testid="stBottom"] > div { background: transparent; }
 
-    hr { border-color: rgba(140,200,255,0.25) !important; }
+    hr { border-color: rgba(110,231,183,0.25) !important; }
     .stAlert { border-radius: 14px; }
     </style>
     """,
@@ -838,8 +864,8 @@ etat_texte = t["online"] if moteur_disponible else t["offline_short"]
 
 st.markdown(
     f"""<div class="hero">
-    <div class="hero-robot">{robot_html(150)}</div>
-    <div>
+    <div class="hero-robot">{robot_html(250)}</div>
+    <div class="hero-text">
         <h1>RadiologyAi</h1>
         <p>Assistant intelligent du service de radiologie</p>
         <div class="badges"><span>🇫🇷 Français</span><span>🇬🇧 English</span><span>🇸🇳 Wolof</span></div>
@@ -989,4 +1015,16 @@ st.divider()
 st.caption(
     "RadiologyAi — Prototype de démonstration. "
     "Les informations doivent être vérifiées et validées par le personnel hospitalier."
-)
+) =====================================================
+# # 15. PIED DE PAGE
+# # =====================================================
+# st.divider()
+
+# st.caption(
+#     "RadiologyBot AI — Prototype de démonstration. "
+#     "Les informations doivent être vérifiées et validées "
+#     "par le personnel hospitalier."
+# )
+# Fin coe
+# nouveau
+
