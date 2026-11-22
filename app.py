@@ -1027,6 +1027,7 @@
 # # )
 # Fin coe
 # nouveau
+
 import re
 from datetime import datetime
 from pathlib import Path
@@ -1509,21 +1510,37 @@ st.markdown(
         padding: 2px;
     }
 
-    /* ---------- Zone de Saisie ---------- */
-    [data-testid="stChatInput"] {
-        background: #041026 !important;
-        border-radius: 18px;
-        border: 1.5px solid rgba(110,231,183,0.65);
-        box-shadow: 0 0 28px rgba(6,95,70,0.38);
+    /* ---------- Zone de Saisie : écriture noir foncé bien visible ---------- */
+    [data-testid="stChatInput"],
+    [data-testid="stChatInput"] > div,
+    [data-testid="stChatInput"] > div > div {
+        background: #f8fafc !important;
+        border-radius: 18px !important;
+        border: 2px solid #10b981 !important;
+        box-shadow: 0 0 28px rgba(6, 95, 70, 0.42) !important;
     }
-    [data-testid="stChatInput"] textarea {
-        color: #ffffff !important;
+    [data-testid="stChatInput"] textarea,
+    [data-testid="stChatInput"] textarea:focus,
+    [data-testid="stChatInput"] input {
+        color: #050811 !important;
+        -webkit-text-fill-color: #050811 !important;
+        caret-color: #050811 !important;
+        background: transparent !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stChatInput"] textarea::placeholder,
+    [data-testid="stChatInput"] input::placeholder {
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stChatInput"] button {
+        color: #050811 !important;
         background: transparent !important;
     }
-    [data-testid="stChatInput"] textarea::placeholder {
-        color: #cbd5e1 !important;
+    [data-testid="stBottom"] > div {
+        background: transparent !important;
     }
-    [data-testid="stBottom"] > div { background: transparent; }
 
     hr { border-color: rgba(148,163,184,0.22) !important; }
     .stAlert { border-radius: 14px; }
@@ -1722,4 +1739,3 @@ st.caption(
     "RadiologyAi — Assistant d'orientation pour le service de radiologie. "
     "Les informations affichées doivent être validées par l'équipe médicale et d'accueil."
 )
-
