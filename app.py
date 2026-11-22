@@ -2653,13 +2653,15 @@ def detecter_langue(texte: str, langue_precedente: str = "Français") -> str:
 # 4. IMAGES (robot, utilisateur, logo, photo de l'hôpital)
 # =====================================================
 ROBOT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+<style>.oeil{transform-box:fill-box;transform-origin:center;animation:cl 3s infinite}@keyframes cl{0%,86%,100%{transform:scaleY(1)}90%,94%{transform:scaleY(0.05)}}</style>
 <circle cx="60" cy="60" r="60" fill="#d6e8fb"/>
 <line x1="60" y1="22" x2="60" y2="32" stroke="#4b8fe2" stroke-width="3" stroke-linecap="round"/>
 <circle cx="60" cy="20" r="4" fill="#4b8fe2"/>
 <rect x="28" y="32" width="64" height="48" rx="22" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
 <rect x="36" y="40" width="48" height="32" rx="14" fill="#101a33"/>
-<ellipse cx="50" cy="55" rx="5" ry="6.5" fill="#38bdf8"/><ellipse cx="70" cy="55" rx="5" ry="6.5" fill="#38bdf8"/>
-<path d="M54 65 Q60 69 66 65" fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round"/>
+<g class="oeil"><ellipse cx="49" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="46" cy="50" r="3.4" fill="#ffffff"/></g>
+<g class="oeil"><ellipse cx="71" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="68" cy="50" r="3.4" fill="#ffffff"/></g>
+<path d="M54 68 Q60 71.5 66 68" fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round"/>
 <path d="M38 86 Q60 80 82 86 L86 112 Q60 120 34 112 Z" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
 <path d="M50 88 Q60 104 70 88" fill="none" stroke="#4b8fe2" stroke-width="2.5"/>
 </svg>"""
@@ -2681,7 +2683,8 @@ def ecrire_avatar(nom: str, svg: str, defaut: str) -> str:
 
 
 AVATAR_BOT = ecrire_avatar("medibot_avatar.svg", ROBOT_SVG, "🤖")
-AVATAR_USER = ecrire_avatar("user_avatar.svg", USER_SVG, "🧑")
+AVATAR_USER = (str(DOSSIER / "ibrahima.jpg") if (DOSSIER / "ibrahima.jpg").exists()
+               else ecrire_avatar("user_avatar.svg", USER_SVG, "🧑"))
 
 
 def image_b64(*noms: str) -> str | None:
@@ -2696,6 +2699,7 @@ def image_b64(*noms: str) -> str | None:
 
 PHOTO = image_b64("hopital.jpg", "hopital.jpeg", "hopital.png")
 LOGO = image_b64("logo.png", "logo.jpg")
+PHOTO_USER = image_b64("ibrahima.jpg", "ibrahima.png")
 
 LOGO_SVG = """<svg viewBox="0 0 100 100" width="84" height="84" xmlns="http://www.w3.org/2000/svg">
 <circle cx="50" cy="50" r="47" fill="#ffffff" stroke="#f5c518" stroke-width="5"/>
@@ -2767,9 +2771,10 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 .topbar .slogan {{ border-left: 2px solid #94a3b8; padding-left: 14px; font-style: italic; font-weight: 600; color: #1e3a6e !important; }}
 .topbar .user {{ display: flex; align-items: center; gap: 10px; font-weight: 500; }}
 .topbar .user .pic {{
-    width: 38px; height: 38px; border-radius: 50%; background: #d6e8fb;
-    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 50%; background: #d6e8fb; border: 2px solid #ffffff; box-shadow: 0 2px 8px rgba(15,63,135,0.25);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
 }}
+.topbar .user .pic img {{ width: 100%; height: 100%; object-fit: cover; }}
 .banner {{
     display: flex; overflow: hidden; border-radius: 18px; min-height: 150px; margin-bottom: 18px;
     background: linear-gradient(100deg,#e4effc 0%,#cfe2f9 60%,#b4d2f5 100%);
@@ -2791,7 +2796,7 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 [data-testid="stChatMessage"] {{ background: transparent; border: none; box-shadow: none; padding: 6px 0; gap: 14px; align-items: flex-start; }}
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{ flex-direction: row-reverse; }}
 [data-testid^="stChatMessageAvatar"] {{ width: 56px; height: 56px; border-radius: 50%; background: #d6e8fb; }}
-[data-testid^="stChatMessageAvatar"] img {{ border-radius: 50%; }}
+[data-testid^="stChatMessageAvatar"] img {{ border-radius: 50%; object-fit: cover; width: 100%; height: 100%; }}
 [data-testid="stChatMessageContent"] {{
     background: #e9eff8; border: 1px solid #dde6f3; border-radius: 6px 18px 18px 18px;
     padding: 14px 20px; width: fit-content; max-width: 78%;
@@ -2928,11 +2933,12 @@ with st.sidebar:
 # =====================================================
 # 8. EN-TÊTE + BANNIÈRE
 # =====================================================
+pic_html = f'<img src="{PHOTO_USER}">' if PHOTO_USER else "👤"
 st.markdown(
     f"""
 <div class="topbar">
   <div class="slogan">Ensemble pour une meilleure santé</div>
-  <div class="user"><div class="pic">👤</div><span>{NOM_UTILISATEUR}</span></div>
+  <div class="user"><div class="pic">{pic_html}</div><span>{NOM_UTILISATEUR}</span></div>
 </div>
 <div class="banner">
   <div class="photo"></div>
