@@ -1,14 +1,6 @@
-#streamlit
-#langchain-core
-#langchain-text-splitters
-#langchain-google-genai
-streamlit>=1.40
+streamlit
 langchain-core
-langchain-chroma
 langchain-text-splitters
 langchain-google-genai
-chromadb
-pysqlite3-binary; sys_platform == "linux"
-# Optionnel : seulement si vous gardez les embeddings bge-m3 via Ollama
-# langchain-ollama
+
 
