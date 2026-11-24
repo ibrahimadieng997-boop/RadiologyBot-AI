@@ -832,12 +832,28 @@
 #Fin 
 # nouveau
 """
-Moteur RAG de RadiologyBot AI
-Architecture cloud : Google Gemini + LangChain + Streamlit.
+Moteur RAG de RadiologyBot AI  (version fiable, connectée à ChromaDB)
+LLM : Google Gemini  |  Base : ChromaDB (collection "radiologie")  |  UI : Streamlit
 
-Base de connaissances : radiologie.txt
-Langues : wolof, français et anglais.
+Stratégie de connexion (automatique) :
+  1. Ouvre votre base existante  ./chroma_db  (créée par create_base.ipynb).
+  2. Lit la dimension des vecteurs stockés et choisit les embeddings compatibles
+     (bge-m3 via Ollama = 1024 dim, sinon embeddings Gemini).
+  3. Si aucun embedding compatible n'est disponible (ex. Streamlit Cloud sans Ollama),
+     reconstruit une base  ./chroma_db_gemini  depuis radiologie.txt avec Gemini.
+     Votre dossier chroma_db n'est JAMAIS modifié.
+
+L'API publique est inchangée : service_pret, prechauffer, ask_ai, ask_ai_stream,
+normaliser_langue.  Nouveau : diagnostic() pour afficher l'état dans l'interface.
 """
+
+# --- sqlite3 récent requis par ChromaDB (Streamlit Cloud / Linux anciens) ---
+import sys
+try:
+    __import__("pysqlite3")
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except Exception:
+    pass
 
 import os
 import re
@@ -845,320 +861,280 @@ import time
 from pathlib import Path
 
 import streamlit as st
-
-from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_google_genai import (
-    ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings,
-)
-from langchain_text_splitters import (
-    MarkdownHeaderTextSplitter,
-    RecursiveCharacterTextSplitter,
-)
-
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ==========================================================
 # 1. CONFIGURATION
 # ==========================================================
-
-FICHE = Path(__file__).parent / "radiologie.txt"
+RACINE = Path(__file__).parent
+FICHE = RACINE / "radiologie.txt"
 
 LANGUES = {
-    "fr": "français",
-    "français": "français",
-    "french": "français",
-    "en": "anglais",
-    "anglais": "anglais",
-    "english": "anglais",
-    "wo": "wolof",
-    "wolof": "wolof",
+    "fr": "français", "français": "français", "francais": "français", "french": "français",
+    "en": "anglais", "anglais": "anglais", "english": "anglais",
+    "wo": "wolof", "wolof": "wolof",
 }
 
-# Correspondances utiles pour aider la recherche vectorielle
-# quand un patient écrit en wolof normal ou en anglais.
 MOTS_CLES_THEME = {
-    "waxtu": "horaires ouverture fermeture heures",
-    "ubbeeku": "horaires ouverture ouvert heures",
-    "ubbi": "horaires ouverture ouvert heures",
-    "kayit": "documents dossier ordonnance carte identité",
-    "indi": "apporter documents ordonnance",
-    "ekografi": "échographie préparation examen",
-    "scanner": "scanner tomodensitométrie préparation examen",
-    "irm": "irm préparation examen",
-    "radio": "radiographie rayon x examen",
-    "examen": "examens prestations imagerie",
-    "laaj": "rendez-vous prise de rendez-vous",
-    "randez": "rendez-vous prise de rendez-vous",
-    "wute": "rendez-vous prise de rendez-vous",
-    "barab": "adresse localisation accès où se trouve",
-    "fan": "où localisation adresse accès",
-    "foo": "où localisation adresse accès",
-    "ana": "où localisation adresse accès",
-    "njëg": "tarif prix coût paiement",
-    "alël": "tarif prix coût paiement",
-    "hours": "horaires ouverture heures",
-    "open": "horaires ouverture ouvert",
-    "bring": "documents dossier ordonnance apporter",
-    "documents": "documents dossier ordonnance",
-    "appointment": "rendez-vous prise de rendez-vous",
-    "ultrasound": "échographie préparation examen",
-    "prepare": "préparation examen",
-    "preparation": "préparation examen",
-    "results": "résultats compte rendu",
-    "where": "adresse localisation accès où se trouve",
-    "cost": "tarif prix coût",
+    "waxtu": "horaires ouverture fermeture heures", "ubbeeku": "horaires ouverture ouvert heures",
+    "ubbi": "horaires ouverture ouvert heures", "kayit": "documents dossier ordonnance carte identité",
+    "indi": "apporter documents ordonnance", "ekografi": "échographie préparation examen",
+    "scanner": "scanner tomodensitométrie préparation examen", "irm": "irm préparation examen",
+    "radio": "radiographie rayon x examen", "examen": "examens prestations imagerie",
+    "laaj": "rendez-vous prise de rendez-vous", "randez": "rendez-vous prise de rendez-vous",
+    "wute": "rendez-vous prise de rendez-vous", "barab": "adresse localisation accès où se trouve",
+    "fan": "où localisation adresse accès", "foo": "où localisation adresse accès",
+    "ana": "où localisation adresse accès", "njëg": "tarif prix coût paiement",
+    "alël": "tarif prix coût paiement", "hours": "horaires ouverture heures",
+    "open": "horaires ouverture ouvert", "bring": "documents dossier ordonnance apporter",
+    "documents": "documents dossier ordonnance", "appointment": "rendez-vous prise de rendez-vous",
+    "ultrasound": "échographie préparation examen", "prepare": "préparation examen",
+    "preparation": "préparation examen", "results": "résultats compte rendu",
+    "where": "adresse localisation accès où se trouve", "cost": "tarif prix coût",
     "price": "tarif prix coût",
 }
 
 
 # ==========================================================
-# 2. GESTION DES SECRETS
+# 2. SECRETS & CHEMINS
 # ==========================================================
-
 def _secret(nom: str, defaut: str = "") -> str:
-    """Lit un secret Streamlit ou une variable d'environnement."""
-
     try:
         valeur = st.secrets.get(nom)
     except Exception:
         valeur = None
-
     return str(valeur or os.environ.get(nom, defaut))
 
 
-def service_pret() -> bool:
-    """Vérifie la présence de la clé API et du document."""
+def _chemin(valeur: str) -> Path:
+    p = Path(valeur)
+    return p if p.is_absolute() else RACINE / p
 
-    return (
-        bool(_secret("GOOGLE_API_KEY"))
-        and FICHE.exists()
-        and FICHE.stat().st_size > 0
-    )
+
+def _dossier_chroma() -> Path:
+    return _chemin(_secret("CHROMA_DIR", "chroma_db"))
+
+
+def _dossier_gemini() -> Path:
+    return _chemin(_secret("CHROMA_DIR_GEMINI", "chroma_db_gemini"))
+
+
+def _collection() -> str:
+    return _secret("CHROMA_COLLECTION", "radiologie")
+
+
+def _base_utilisateur_presente() -> bool:
+    return (_dossier_chroma() / "chroma.sqlite3").exists()
+
+
+def service_pret() -> bool:
+    """Clé API présente ET (base Chroma trouvée OU radiologie.txt disponible pour la reconstruire)."""
+    base_ok = _base_utilisateur_presente() or (FICHE.exists() and FICHE.stat().st_size > 0)
+    return bool(_secret("GOOGLE_API_KEY")) and base_ok
 
 
 def normaliser_langue(langue: str = "français") -> str:
-    """Convertit les différentes écritures vers une langue reconnue."""
-
-    valeur = str(langue or "français").strip().lower()
-
-    return LANGUES.get(valeur, "français")
+    return LANGUES.get(str(langue or "français").strip().lower(), "français")
 
 
 # ==========================================================
-# 3. CONSTRUCTION DU MOTEUR RAG
+# 3. EMBEDDINGS CANDIDATS
 # ==========================================================
+def _emb_ollama():
+    from langchain_ollama import OllamaEmbeddings
+    return OllamaEmbeddings(
+        model=_secret("MODELE_EMBEDDINGS_OLLAMA", "bge-m3"),
+        base_url=_secret("OLLAMA_BASE_URL", "http://localhost:11434"),
+    )
 
-@st.cache_resource(show_spinner=False)
-def _moteur():
-    """Construit les embeddings, la base vectorielle et Gemini."""
 
-    cle = _secret("GOOGLE_API_KEY")
+def _emb_gemini():
+    return GoogleGenerativeAIEmbeddings(
+        model=_secret("MODELE_EMBEDDINGS", "gemini-embedding-001"),
+        google_api_key=_secret("GOOGLE_API_KEY"),
+    )
 
-    if not cle:
-        raise RuntimeError(
-            "La clé GOOGLE_API_KEY est absente. "
-            "Configure-la dans les Secrets Streamlit."
-        )
 
-    if not FICHE.exists():
+def _dimension_base(base: Chroma):
+    """Dimension des vecteurs stockés dans la collection (None si introuvable)."""
+    try:
+        res = base._collection.get(limit=1, include=["embeddings"])
+        emb = res.get("embeddings")
+        if emb is None or len(emb) == 0:
+            return None
+        return len(emb[0])
+    except Exception:
+        return None
+
+
+# ==========================================================
+# 4. OUVERTURE / RECONSTRUCTION DE LA BASE
+# ==========================================================
+def _ouvrir_base_utilisateur(problemes: list):
+    """Ouvre ./chroma_db et trouve les embeddings dont la dimension correspond."""
+    if not _base_utilisateur_presente():
+        problemes.append(f"Dossier ChromaDB introuvable : {_dossier_chroma()}")
+        return None
+
+    try:
+        lecture = Chroma(collection_name=_collection(), persist_directory=str(_dossier_chroma()))
+        nb = lecture._collection.count()
+    except Exception as e:
+        problemes.append(f"Ouverture de ChromaDB impossible : {e}")
+        return None
+
+    if nb == 0:
+        problemes.append(f"La collection « {_collection()} » est vide ou introuvable.")
+        return None
+
+    dim = _dimension_base(lecture)
+    for nom, fabrique in (("bge-m3 (Ollama)", _emb_ollama), ("Gemini", _emb_gemini)):
+        try:
+            emb = fabrique()
+            if dim is None or len(emb.embed_query("test")) == dim:
+                base = Chroma(collection_name=_collection(),
+                              persist_directory=str(_dossier_chroma()),
+                              embedding_function=emb)
+                return base, f"chroma_db existante · embeddings {nom}", nb
+            problemes.append(f"Embeddings {nom} incompatibles avec la base ({dim} dimensions).")
+        except Exception as e:
+            problemes.append(f"Embeddings {nom} indisponibles : {str(e)[:120]}")
+    return None
+
+
+def _reconstruire_gemini(problemes: list):
+    """Construit chroma_db_gemini depuis radiologie.txt (dossier séparé)."""
+    if not (FICHE.exists() and FICHE.stat().st_size > 0):
         raise FileNotFoundError(
-            f"Le fichier {FICHE.name} est introuvable."
+            "Aucune base utilisable : chroma_db incompatible/absente et radiologie.txt introuvable. "
+            "Placez radiologie.txt à côté du fichier, ou fournissez chroma_db."
         )
+    emb = _emb_gemini()
+    dossier = _dossier_gemini()
+
+    # Réutilise la base Gemini déjà construite si elle existe et n'est pas vide
+    if (dossier / "chroma.sqlite3").exists():
+        try:
+            base = Chroma(collection_name=_collection(), persist_directory=str(dossier),
+                          embedding_function=emb)
+            nb = base._collection.count()
+            if nb > 0:
+                return base, "base reconstruite · embeddings Gemini", nb
+        except Exception as e:
+            problemes.append(f"Base Gemini existante illisible, reconstruction : {e}")
 
     texte = FICHE.read_text(encoding="utf-8").strip()
-
-    if not texte:
-        raise ValueError(
-            "Le fichier radiologie.txt est vide."
-        )
-
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=_secret(
-            "MODELE_EMBEDDINGS",
-            "gemini-embedding-001"
-        ),
-        google_api_key=cle,
-    )
-
-    sections = MarkdownHeaderTextSplitter(
-        headers_to_split_on=[
-            ("##", "section")
-        ],
-        strip_headers=False,
-    ).split_text(texte)
-
-    passages = RecursiveCharacterTextSplitter(
-        chunk_size=900,
-        chunk_overlap=100,
-    ).split_documents(sections)
-
+    doc = Document(page_content=texte,
+                   metadata={"source": FICHE.name, "service": "Radiologie"})
+    passages = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=50).split_documents([doc])
     if not passages:
-        raise ValueError(
-            "Aucun passage exploitable dans radiologie.txt."
-        )
-
-    base = InMemoryVectorStore.from_documents(
-        passages,
-        embeddings,
-    )
-
-    retriever = base.as_retriever(
-        search_kwargs={"k": 4}
-    )
-
-    modele_principal = _secret(
-        "MODELE_LLM",
-        "gemini-2.5-flash"
-    )
-
-    llm_principal = ChatGoogleGenerativeAI(
-        model=modele_principal,
-        google_api_key=cle,
-        temperature=0.1,
-        max_retries=1,
-    )
-
-    modeles = [llm_principal]
-
-    modele_secours = _secret("MODELE_SECOURS")
-
-    if modele_secours and modele_secours != modele_principal:
-
-        llm_secours = ChatGoogleGenerativeAI(
-            model=modele_secours,
-            google_api_key=cle,
-            temperature=0.1,
-            max_retries=1,
-        )
-
-        modeles.append(llm_secours)
-
-    return retriever, modeles
+        raise ValueError("Aucun passage exploitable dans radiologie.txt.")
+    base = Chroma.from_documents(passages, emb, collection_name=_collection(),
+                                 persist_directory=str(dossier))
+    return base, "base reconstruite · embeddings Gemini", base._collection.count()
 
 
 # ==========================================================
-# 4. PRÉCHAUFFAGE
+# 5. MOTEUR (mis en cache)
 # ==========================================================
+@st.cache_resource(show_spinner=False)
+def _moteur():
+    cle = _secret("GOOGLE_API_KEY")
+    if not cle:
+        raise RuntimeError("La clé GOOGLE_API_KEY est absente (Secrets Streamlit ou variable d'environnement).")
+
+    problemes: list = []
+    ouverture = _ouvrir_base_utilisateur(problemes) or _reconstruire_gemini(problemes)
+    base, mode, nb = ouverture
+
+    retriever = base.as_retriever(search_kwargs={"k": 4})
+
+    principal = _secret("MODELE_LLM", "gemini-2.5-flash")
+    modeles = [ChatGoogleGenerativeAI(model=principal, google_api_key=cle,
+                                      temperature=0.1, max_retries=1)]
+    secours = _secret("MODELE_SECOURS")
+    if secours and secours != principal:
+        modeles.append(ChatGoogleGenerativeAI(model=secours, google_api_key=cle,
+                                              temperature=0.1, max_retries=1))
+
+    info = {"mode": mode, "passages": nb, "collection": _collection(), "avertissements": problemes}
+    return retriever, modeles, info
+
 
 def prechauffer():
-    """Prépare le moteur au démarrage."""
+    """Prépare le moteur au démarrage et retourne le diagnostic."""
+    return _moteur()[2]
 
-    _moteur()
 
+def diagnostic() -> dict:
+    """État de la connexion (pour la barre latérale ou le débogage)."""
+    try:
+        return {"ok": True, **_moteur()[2]}
+    except Exception as e:
+        return {"ok": False, "erreur": str(e)}
 
-# ==========================================================
-# 5. CACHE DES RÉPONSES
-# ==========================================================
 
 @st.cache_resource(show_spinner=False)
 def _cache_reponses():
-    """Conserve les réponses fréquentes."""
-
     return {}
 
 
 # ==========================================================
-# 6. EXTRACTION DU TEXTE
+# 6. OUTILS
 # ==========================================================
-
 def _texte(reponse) -> str:
-    """Extrait le texte d'une réponse LangChain."""
-
     contenu = getattr(reponse, "content", None)
-
     if contenu is None:
         valeur = getattr(reponse, "text", "")
         if callable(valeur):
             valeur = valeur()
         return str(valeur or "")
-
     if isinstance(contenu, str):
         return contenu
-
     if isinstance(contenu, list):
-        morceaux = []
-
-        for bloc in contenu:
-            if isinstance(bloc, dict):
-                morceaux.append(str(bloc.get("text", "")))
-            else:
-                morceaux.append(str(bloc))
-
-        return "".join(morceaux)
-
+        return "".join(str(b.get("text", "")) if isinstance(b, dict) else str(b) for b in contenu)
     return str(contenu)
 
 
-# ==========================================================
-# 7. MESSAGES DE SECOURS
-# ==========================================================
-
 def _message_indisponible(langue: str) -> str:
-    """Retourne un message lorsque l'information est absente."""
-
-    messages = {
-        "français": (
-            "Je ne trouve pas cette information dans les "
-            "documents du service de radiologie. "
-            "Veuillez contacter l'accueil de l'hôpital."
-        ),
-        "anglais": (
-            "I cannot find this information in the radiology "
-            "department documents. Please contact the hospital reception."
-        ),
-        "wolof": (
-            "Xibaar bii gisuma ko ci kayiti departema radiologie bi. "
-            "Jëfandikool accueil bu lopitaal bi ngir am leeral."
-        ),
-    }
-
-    return messages[langue]
+    return {
+        "français": ("Je ne trouve pas cette information dans les documents du service de "
+                     "radiologie. Veuillez contacter l'accueil de l'hôpital."),
+        "anglais": ("I cannot find this information in the radiology department documents. "
+                    "Please contact the hospital reception."),
+        "wolof": ("Xibaar bii gisuma ko ci kayiti departema radiologie bi. "
+                  "Jëfandikool accueil bu lopitaal bi ngir am leeral."),
+    }[langue]
 
 
-# ==========================================================
-# 8. CONSTRUCTION DU PROMPT MULTILINGUE
-# ==========================================================
-
-def _construire_prompt(
-    contexte: str,
-    question: str,
-    langue: str = "français",
-) -> str:
-
+def _construire_prompt(contexte: str, question: str, langue: str = "français") -> str:
     langue = normaliser_langue(langue)
-
-    consigne_style = (
-        "Utilise un wolof courant, naturel, clair et poli, compréhensible par tous les patients."
-        if langue == "wolof"
-        else "Utilise des phrases simples, claires et compréhensibles."
-    )
-
+    style = ("Utilise un wolof courant, naturel, clair et poli, compréhensible par tous les patients."
+             if langue == "wolof" else "Utilise des phrases simples, claires et compréhensibles.")
     return f"""
 Tu es RadiologyBot AI, un assistant d'information
 du service de radiologie de l'hôpital régional de Thiès.
 
 MISSION :
-Répondre clairement aux questions des patients
-concernant le fonctionnement du service.
+Répondre clairement aux questions des patients concernant le fonctionnement du service.
 
 LANGUE OBLIGATOIRE :
 La réponse doit être entièrement rédigée en {langue}.
-{consigne_style}
+{style}
 
 RÈGLES IMPORTANTES :
-
 1. Utilise uniquement les informations présentes dans le contexte.
 2. N'invente jamais d'horaires, de tarifs ou de prestations.
 3. Si une information est absente, indique-le clairement.
 4. Ne donne jamais de diagnostic médical.
 5. Ne prescris aucun médicament.
-6. Pour une question médicale personnelle, oriente le patient
-   vers un professionnel de santé.
-7. {consigne_style}
-8. Ne présente jamais une information inventée comme une
-   information officielle de l'hôpital.
-9. Si le contexte ne permet pas de répondre, dis-le dans
-   la langue demandée.
+6. Pour une question médicale personnelle, oriente le patient vers un professionnel de santé.
+7. {style}
+8. Ne présente jamais une information inventée comme une information officielle de l'hôpital.
+9. Si le contexte ne permet pas de répondre, dis-le dans la langue demandée.
 
 CONTEXTE DOCUMENTAIRE :
 
@@ -1172,252 +1148,127 @@ RÉPONSE EN {langue.upper()} :
 """
 
 
-# ==========================================================
-# 9. GESTION DES ERREURS GEMINI
-# ==========================================================
-
-def _est_quota(erreur) -> bool:
-
-    texte = str(erreur).upper()
-
-    return any(
-        mot in texte
-        for mot in (
-            "429",
-            "RESOURCE_EXHAUSTED",
-            "QUOTA",
-        )
-    )
+def _est_quota(e) -> bool:
+    t = str(e).upper()
+    return any(m in t for m in ("429", "RESOURCE_EXHAUSTED", "QUOTA"))
 
 
-def _est_surcharge(erreur) -> bool:
-
-    texte = str(erreur).upper()
-
-    return any(
-        mot in texte
-        for mot in (
-            "503",
-            "UNAVAILABLE",
-            "OVERLOADED",
-            "HIGH DEMAND",
-        )
-    )
+def _est_surcharge(e) -> bool:
+    t = str(e).upper()
+    return any(m in t for m in ("503", "UNAVAILABLE", "OVERLOADED", "HIGH DEMAND"))
 
 
 # ==========================================================
-# 10. RECHERCHE DOCUMENTAIRE ENRICHIE
+# 7. RECHERCHE
 # ==========================================================
-
 def _requete_recherche(question: str, langue: str) -> str:
-    """Enrichit la requête de recherche pour mieux trouver les passages."""
-
     tokens = re.findall(r"[\w'’\-àâäçéèêëîïôöùûüÿñœ]+", question.lower())
-    ajouts = []
-
-    for tok in tokens:
-        if tok in MOTS_CLES_THEME:
-            ajouts.append(MOTS_CLES_THEME[tok])
-
+    ajouts = [MOTS_CLES_THEME[t] for t in tokens if t in MOTS_CLES_THEME]
     if langue in ("wolof", "anglais"):
         ajouts.append("service de radiologie examens préparation horaires documents")
-
-    if not ajouts:
-        return question
-
-    return f"{question} — {' '.join(ajouts)}"
+    return f"{question} — {' '.join(ajouts)}" if ajouts else question
 
 
 def _rechercher(question: str, langue: str = "français"):
-    """Recherche les passages les plus pertinents sans doublons."""
-
-    retriever, modeles = _moteur()
-
+    retriever, modeles, _ = _moteur()
     requete = _requete_recherche(question, langue)
     documents = retriever.invoke(requete)
-
     if not documents and requete != question:
         documents = retriever.invoke(question)
-
-    uniques = []
-    vus = set()
-    for doc in documents:
-        cle = doc.page_content.strip()
-        if cle and cle not in vus:
-            vus.add(cle)
-            uniques.append(doc)
-
+    uniques, vus = [], set()
+    for d in documents:
+        c = d.page_content.strip()
+        if c and c not in vus:
+            vus.add(c)
+            uniques.append(d)
     return uniques, modeles
 
 
-# ==========================================================
-# 11. GÉNÉRATION CLASSIQUE
-# ==========================================================
+def _preparer(question: str, langue: str):
+    documents, modeles = _rechercher(question, langue)
+    if not documents:
+        return None, modeles
+    contexte = "\n\n".join(d.page_content for d in documents)
+    return _construire_prompt(contexte, question, langue), modeles
 
-def ask_ai(
-    question: str,
-    langue: str = "français",
-) -> str:
-    """Génère une réponse complète."""
 
+# ==========================================================
+# 8. GÉNÉRATION
+# ==========================================================
+def ask_ai(question: str, langue: str = "français") -> str:
     question = str(question or "").strip()
     langue = normaliser_langue(langue)
-
     if not question:
         return "Veuillez saisir une question."
 
-    documents, modeles = _rechercher(question, langue)
-
-    if not documents:
+    prompt, modeles = _preparer(question, langue)
+    if prompt is None:
         return _message_indisponible(langue)
 
-    contexte = "\n\n".join(
-        document.page_content
-        for document in documents
-    )
-
-    prompt = _construire_prompt(
-        contexte,
-        question,
-        langue,
-    )
-
     derniere_erreur = None
-
     for modele in modeles:
         try:
-            reponse = modele.invoke(prompt)
-            resultat = _texte(reponse).strip()
-
+            resultat = _texte(modele.invoke(prompt)).strip()
             if resultat:
                 return resultat
-
-        except Exception as erreur:
-            derniere_erreur = erreur
-
-            if _est_quota(erreur) or _est_surcharge(erreur):
-                continue
-
-            continue
-
+        except Exception as e:
+            derniere_erreur = e
     if derniere_erreur:
-        raise RuntimeError(
-            "Impossible de générer une réponse avec Gemini. "
-            "Vérifie la clé API, le modèle et ton quota."
-        ) from derniere_erreur
-
+        raise RuntimeError("Impossible de générer une réponse avec Gemini. "
+                           "Vérifie la clé API, le modèle et ton quota.") from derniere_erreur
     return _message_indisponible(langue)
 
 
-# ==========================================================
-# 12. GÉNÉRATION AVEC STREAMING
-# ==========================================================
-
-def ask_ai_stream(
-    question: str,
-    langue: str = "français",
-):
-    """
-    Génère une réponse progressivement.
-
-    Exemple :
-    for morceau in ask_ai_stream(question, langue):
-        st.write(morceau)
-    """
-
+def ask_ai_stream(question: str, langue: str = "français"):
     question = str(question or "").strip()
     langue = normaliser_langue(langue)
-
     if not question:
         yield "Veuillez saisir une question."
         return
 
     memoire = _cache_reponses()
-
-    cle = (
-        langue,
-        " ".join(question.lower().split()),
-    )
-
+    cle = (langue, " ".join(question.lower().split()))
     if cle in memoire:
-
-        for morceau in re.split(
-            r"(\s+)",
-            memoire[cle],
-        ):
+        for morceau in re.split(r"(\s+)", memoire[cle]):
             if morceau:
                 yield morceau
-
         return
 
-    documents, modeles = _rechercher(question, langue)
-
-    if not documents:
+    prompt, modeles = _preparer(question, langue)
+    if prompt is None:
         yield _message_indisponible(langue)
         return
 
-    contexte = "\n\n".join(
-        document.page_content
-        for document in documents
-    )
-
-    prompt = _construire_prompt(
-        contexte,
-        question,
-        langue,
-    )
-
-    texte_complet = ""
-    derniere_erreur = None
-
+    texte_complet, derniere_erreur = "", None
     for modele in modeles:
-
         reussi = False
-
         for tentative in range(2):
-
             try:
-
                 for morceau in modele.stream(prompt):
-
                     extrait = _texte(morceau)
-
                     if extrait:
                         texte_complet += extrait
                         yield extrait
-
                 reussi = True
                 break
-
-            except Exception as erreur:
-
-                derniere_erreur = erreur
-
+            except Exception as e:
+                derniere_erreur = e
                 if texte_complet:
                     raise
-
-                if _est_quota(erreur):
+                if _est_quota(e):
                     break
-
-                if _est_surcharge(erreur) and tentative == 0:
+                if _est_surcharge(e) and tentative == 0:
                     time.sleep(2)
                     continue
-
                 break
-
         if reussi:
             break
 
     if not texte_complet.strip():
-
         if derniere_erreur:
-            raise RuntimeError(
-                "Les modèles Gemini ne sont pas disponibles. "
-                "Vérifie ta clé API, ton quota et les noms des modèles."
-            ) from derniere_erreur
-
+            raise RuntimeError("Les modèles Gemini ne sont pas disponibles. "
+                               "Vérifie ta clé API, ton quota et les noms des modèles.") from derniere_erreur
         yield _message_indisponible(langue)
         return
 
     memoire[cle] = texte_complet.strip()
-
