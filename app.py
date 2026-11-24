@@ -3118,7 +3118,6 @@
 #     st.rerun()
 # Fin Nouveau
 # Hopital
-
 """
 HospitalAI – Hôpital Régional de Thiès
 Interface Streamlit du chatbot RAG (ChromaDB + bge-m3 + Gemma via Ollama + NLLB).
