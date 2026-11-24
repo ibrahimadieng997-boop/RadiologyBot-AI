@@ -3118,6 +3118,7 @@
 #     st.rerun()
 # # Fin Nouveau
 # # Hopital
+import base64
 import re
 from datetime import datetime
 from pathlib import Path
@@ -3256,6 +3257,21 @@ def ecrire_avatar(nom, svg, defaut):
 AVATAR_BOT = ecrire_avatar("hospitalai_bot.svg", ROBOT_SVG, "🤖")
 AVATAR_USER = ecrire_avatar("hospitalai_user.svg", USER_SVG, "🧑")
 
+
+def image_b64(*noms):
+    """Charge une image placée à côté de app.py et la renvoie en base64."""
+    for nom in noms:
+        p = DOSSIER / nom
+        if p.exists():
+            mime = "png" if p.suffix.lower() == ".png" else "jpeg"
+            return f"data:image/{mime};base64," + base64.b64encode(p.read_bytes()).decode()
+    return None
+
+
+PHOTO_USER = image_b64("ibrahima.jpg", "ibrahima.jpeg", "ibrahima.png")
+PIC_HTML = f'<img src="{PHOTO_USER}">' if PHOTO_USER else NOM_UTILISATEUR[0]
+POINTS = '<div class="typing"><span></span><span></span><span></span></div>'
+
 # =====================================================
 # 5. STYLE
 # =====================================================
@@ -3298,7 +3314,13 @@ header[data-testid="stHeader"] {background:transparent}
 .hero .tag {background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.3); border-radius:99px; padding:8px 16px; font-weight:600; white-space:nowrap}
 .topbar {display:flex; justify-content:space-between; align-items:center; padding:2px 4px 10px; font-weight:600}
 .topbar .slogan {border-left:3px solid #f5b800; padding-left:12px; font-style:italic; color:#1e3a6e}
-.pic {width:40px; height:40px; border-radius:50%; background:#1d5fd0; color:#fff !important; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; font-weight:700}
+.pic {width:52px; height:52px; border-radius:50%; background:#1d5fd0; color:#fff !important; display:inline-flex; align-items:center; justify-content:center; margin-right:12px; font-weight:700; overflow:hidden; vertical-align:middle; border:3px solid #fff; box-shadow:0 0 0 2px #1d5fd0,0 6px 16px rgba(15,63,135,.35)}
+.pic img {width:100%; height:100%; object-fit:cover; border-radius:50%}
+.typing {display:inline-flex; gap:6px; align-items:center; padding:8px 4px}
+.typing span {width:10px; height:10px; border-radius:50%; background:#6f97d6; animation:rebond 1.3s infinite ease-in-out}
+.typing span:nth-child(2) {animation-delay:.18s}
+.typing span:nth-child(3) {animation-delay:.36s}
+@keyframes rebond {0%,60%,100% {transform:translateY(0); opacity:.4} 30% {transform:translateY(-7px); opacity:1}}
 
 /* Badges */
 .badges {display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:16px}
@@ -3432,7 +3454,7 @@ if EMBED:
 else:
     st.markdown(f"""
 <div class="topbar"><div class="slogan">Votre santé, notre priorité</div>
-<div><span class="pic">{NOM_UTILISATEUR[0]}</span>{NOM_UTILISATEUR}</div></div>
+<div><span class="pic">{PIC_HTML}</span>{NOM_UTILISATEUR}</div></div>
 <div class="hero"><div><div class="t1">{COEUR.format(s=62, c="#ffffff")}<h1>Hospital<i>AI</i></h1></div>
 <p>Votre assistant intelligent à l'hôpital</p><em>Posez vos questions, obtenez des réponses fiables et instantanées.</em></div>
 <div class="tag">🤖 {NOM_HOPITAL}</div></div>
@@ -3562,15 +3584,27 @@ if question:
                 reponse = msgs["offline"]
                 st.error(reponse)
             else:
+                attente = st.empty()
+                attente.markdown(POINTS, unsafe_allow_html=True)
+
+                def flux():
+                    premier = True
+                    for morceau in ask_ai_stream(question, langue=LANGUES[langue]):
+                        if premier:
+                            attente.empty()
+                            premier = False
+                        yield morceau
+
                 try:
-                    with st.spinner(msgs["thinking"]):
-                        res = st.write_stream(ask_ai_stream(question, langue=LANGUES[langue]))
+                    res = st.write_stream(flux())
+                    attente.empty()
                     if isinstance(res, str) and res.strip():
                         reponse = res
                     else:
                         reponse = msgs["no_answer"]
                         st.warning(reponse)
                 except Exception as e:
+                    attente.empty()
                     reponse = msgs["offline"]
                     st.error(reponse)
                     with st.expander("Détails techniques"):
