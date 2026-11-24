@@ -3119,1334 +3119,239 @@
 # Fin Nouveau
 # Hopital
 
+"""
+HospitalAI – Hôpital Régional de Thiès
+Interface Streamlit du chatbot RAG (ChromaDB + bge-m3 + Gemma via Ollama + NLLB).
+
+Lancer :  streamlit run app.py
+Variables optionnelles : CHROMA_DIR (défaut ./chroma_db), CHAT_MODEL (défaut gemma4:e4b)
+"""
+import html
 import os
-from pathlib import Path
+from functools import lru_cache
 
 import streamlit as st
-import torch
 
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSeq2SeqLM
-)
+# ───────────────────────── Configuration ─────────────────────────
+CHROMA_DIR = os.getenv("CHROMA_DIR", "./chroma_db")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gemma4:e4b")
+LANGUES = {"Français": "fra_Latn", "English": "eng_Latn", "Wolof": "wol_Latn"}
+NLLB = "facebook/nllb-200-distilled-600M"
 
-from langchain_ollama import ChatOllama, OllamaEmbeddings
-from langchain_chroma import Chroma
+st.set_page_config(page_title="HospitalAI · Hôpital Régional de Thiès",
+                   page_icon="💙", layout="wide", initial_sidebar_state="expanded")
+
+# ───────────────────────── Backend RAG (identique aux notebooks) ─────────────────────────
+@st.cache_resource(show_spinner=False)
+def charger_rag():
+    """Retourne (retriever, llm) ou None si Ollama / ChromaDB sont indisponibles."""
+    try:
+        from langchain_chroma import Chroma
+        from langchain_ollama import ChatOllama, OllamaEmbeddings
+        base = Chroma(collection_name="radiologie", persist_directory=CHROMA_DIR,
+                      embedding_function=OllamaEmbeddings(model="bge-m3"))
+        if base._collection.count() == 0:
+            return None
+        llm = ChatOllama(model=CHAT_MODEL, temperature=0.1, top_p=0.99)
+        return base.as_retriever(search_kwargs={"k": 4}), llm
+    except Exception:
+        return None
 
 
-# ============================================================
-# 1. CONFIGURATION DE L'APPLICATION
-# ============================================================
+@lru_cache(maxsize=1)
+def charger_traducteur():
+    import torch
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    tok = AutoTokenizer.from_pretrained(NLLB)
+    mod = AutoModelForSeq2SeqLM.from_pretrained(
+        NLLB, torch_dtype=torch.float16 if dev == "cuda" else torch.float32).to(dev).eval()
+    return tok, mod, dev
 
-st.set_page_config(
-    page_title="RadiologyBot AI | Hôpital Régional de Thiès",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
-APP_NAME = "RadiologyBot AI"
-HOPITAL = "Hôpital Régional de Thiès"
+def traduire(texte, src, cible):
+    if not texte.strip() or src == cible:
+        return texte
+    import torch
+    tok, mod, dev = charger_traducteur()
+    tok.src_lang = src
+    x = tok(texte, return_tensors="pt", truncation=True, max_length=512).to(dev)
+    with torch.inference_mode():
+        y = mod.generate(**x, forced_bos_token_id=tok.convert_tokens_to_ids(cible),
+                         max_new_tokens=256, num_beams=4)
+    return tok.batch_decode(y, skip_special_tokens=True)[0].strip()
 
-OLLAMA_URL = "http://localhost:11434"
 
-MODELE_LLM = "gemma4:e4b"
-MODELE_EMBEDDING = "bge-m3"
-
-DOSSIER_CHROMA = Path("./chroma_db")
-COLLECTION_CHROMA = "radiologie"
-
-MODELE_TRADUCTION = "facebook/nllb-200-distilled-600M"
-
-LANGUES = {
-    "🇫🇷 Français": "fra_Latn",
-    "🇬🇧 English": "eng_Latn",
-    "🇸🇳 Wolof": "wol_Latn"
+DEMO = {  # utilisé uniquement si la base RAG n'est pas disponible (mode démonstration)
+    "horaire": "Le service de radiologie est ouvert du lundi au vendredi, de 8h à 17h. (donnée d'exemple)",
+    "document": "Merci d'apporter votre pièce d'identité, votre ordonnance et vos anciens examens. (donnée d'exemple)",
+    "rendez": "Les rendez-vous se prennent à l'accueil de la radiologie ou par téléphone. (donnée d'exemple)",
 }
 
 
-# ============================================================
-# 2. DESIGN PROFESSIONNEL
-# ============================================================
+def ask_ai(question, langue="Français"):
+    """Retourne (réponse, [passages sources], mode)."""
+    code = LANGUES[langue]
+    q_fr = question if code == "fra_Latn" else traduire(question, code, "fra_Latn")
+    rag = charger_rag()
+    sources = []
+    if rag is None:
+        rep = next((v for k, v in DEMO.items() if k in q_fr.lower()),
+                   "Je ne trouve pas cette information. Veuillez contacter l'accueil de l'hôpital.")
+        mode = "démo"
+    else:
+        retriever, llm = rag
+        docs = retriever.invoke(q_fr)
+        sources = [d.page_content for d in docs]
+        if not docs:
+            rep = "Je ne trouve pas cette information dans les documents du service de radiologie. Veuillez contacter l'accueil de l'hôpital."
+        else:
+            ctx = "\n\n".join(sources)
+            prompt = f"""Tu es HospitalAI, assistant d'information de l'Hôpital régional de Thiès (service de radiologie).
+RÈGLES : utilise uniquement le contexte ; n'invente jamais d'horaires, tarifs ou prestations ;
+si la réponse est absente, dis-le clairement ; ne donne jamais de diagnostic médical ;
+oriente vers le personnel pour toute question médicale personnelle ; réponds en français simple.
 
-st.markdown("""
+CONTEXTE :
+{ctx}
+
+QUESTION DU PATIENT (en français) : {q_fr}
+
+RÉPONSE :"""
+            rep = llm.invoke(prompt).content.strip()
+        mode = "rag"
+    if code != "fra_Latn":
+        rep = traduire(rep, "fra_Latn", code)
+    return rep, sources, mode
+
+
+# ───────────────────────── Style ─────────────────────────
+vue = st.session_state.get("vue", "💻 Ordinateur")
+phone = vue.startswith("📱")
+
+PHONE_CSS = ("""
+.block-container { border:10px solid #101828; border-radius:44px; margin-top:12px; background:#f7faff;
+  box-shadow:0 30px 70px rgba(10,58,140,.35); padding:1rem 1rem 6rem !important; }
+.hero h1 { font-size:1.3rem !important; } .chips { display:none !important; }
+""" if phone else "")
+
+st.markdown(f"""
 <style>
-
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap');
-
-:root {
-    --navy: #08285c;
-    --blue: #1265d8;
-    --gold: #efc45b;
-    --light: #f3f7fd;
-    --text: #17345f;
-}
-
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-}
-
-.stApp {
-    background: linear-gradient(140deg, #f4f8ff, #edf4fc);
-}
-
-#MainMenu, footer, header {
-    visibility: hidden;
-}
-
-.block-container {
-    max-width: 1500px;
-    padding-top: 1.2rem;
-    padding-bottom: 2rem;
-}
-
-/* SIDEBAR */
-
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #08285c, #0b438f);
-}
-
-[data-testid="stSidebar"] * {
-    color: white;
-}
-
-/* HERO */
-
-.hero {
-    position: relative;
-    overflow: hidden;
-    padding: 27px 30px;
-    border-radius: 24px;
-    color: white;
-    background: linear-gradient(110deg, #072655, #0b438f, #1475db);
-    box-shadow: 0 15px 35px rgba(8,40,92,.17);
-}
-
-.hero-kicker {
-    color: #c9defb;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1.5px;
-}
-
-.hero-title {
-    font-family: 'Manrope', sans-serif;
-    font-size: clamp(27px, 3.5vw, 43px);
-    font-weight: 800;
-    letter-spacing: -1px;
-    margin-top: 9px;
-}
-
-.hero-title span {
-    color: var(--gold);
-}
-
-.hero-sub {
-    font-size: 14px;
-    color: #dceaff;
-    margin-top: 8px;
-}
-
-.online {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(255,255,255,.13);
-    border: 1px solid rgba(255,255,255,.2);
-    padding: 7px 13px;
-    border-radius: 30px;
-    margin-top: 15px;
-    font-size: 12px;
-}
-
-.dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #4be4a0;
-}
-
-/* STATISTIQUES */
-
-.stat-card {
-    background: white;
-    padding: 16px;
-    border-radius: 17px;
-    border: 1px solid #e1eaf6;
-    box-shadow: 0 7px 20px rgba(20,60,110,.04);
-    min-height: 95px;
-}
-
-.stat-label {
-    color: #8493a9;
-    font-size: 11px;
-    font-weight: 800;
-}
-
-.stat-value {
-    color: var(--navy);
-    font-size: 23px;
-    font-weight: 800;
-    margin-top: 6px;
-}
-
-.stat-description {
-    color: #8292a8;
-    font-size: 11px;
-}
-
-/* CONTENEURS */
-
-.panel {
-    background: white;
-    padding: 20px;
-    border-radius: 20px;
-    border: 1px solid #e2eaf5;
-    box-shadow: 0 8px 28px rgba(20,60,110,.045);
-}
-
-.panel-title {
-    font-family: 'Manrope', sans-serif;
-    color: var(--navy);
-    font-size: 18px;
-    font-weight: 800;
-    margin-bottom: 15px;
-}
-
-/* MESSAGE DE BIENVENUE */
-
-.welcome {
-    display: flex;
-    gap: 14px;
-    padding: 17px;
-    border-radius: 17px;
-    background: linear-gradient(120deg, #edf5ff, #fbfdff);
-    border: 1px solid #dce9fb;
-    margin-bottom: 17px;
-}
-
-.avatar {
-    min-width: 48px;
-    height: 48px;
-    border-radius: 15px;
-    background: linear-gradient(140deg, #0b4b9f, #1680e8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 25px;
-}
-
-.welcome-title {
-    color: #143768;
-    font-size: 16px;
-    font-weight: 800;
-}
-
-.welcome-text {
-    color: #61748f;
-    font-size: 13px;
-    line-height: 1.7;
-    margin-top: 5px;
-}
-
-/* CARTES */
-
-.feature {
-    background: #f8fbff;
-    border: 1px solid #e0eafa;
-    border-radius: 15px;
-    padding: 14px;
-    min-height: 88px;
-}
-
-.feature-icon {
-    font-size: 22px;
-}
-
-.feature-title {
-    color: #173e77;
-    font-size: 13px;
-    font-weight: 800;
-    margin-top: 7px;
-}
-
-.feature-description {
-    color: #8392a8;
-    font-size: 11px;
-    margin-top: 3px;
-}
-
-/* BOUTONS */
-
-.stButton > button {
-    min-height: 43px;
-    border-radius: 12px;
-    border: 1px solid #dce7f6;
-    background: #f8fbff;
-    color: #173e77;
-    font-weight: 700;
-    transition: .2s;
-}
-
-.stButton > button:hover {
-    background: #edf5ff;
-    border-color: #80b1f2;
-    color: #0b4d9e;
-}
-
-/* CHAT */
-
-[data-testid="stChatMessage"] {
-    background: white;
-    border: 1px solid #e4edf8;
-    border-radius: 16px;
-    padding: 12px;
-}
-
-[data-testid="stChatInput"] {
-    border-radius: 15px;
-}
-
-/* FOOTER */
-
-.footer {
-    background: linear-gradient(105deg, #08285c, #0b4b9e);
-    color: white;
-    border-radius: 16px;
-    padding: 17px;
-    margin-top: 20px;
-    display: flex;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-    font-size: 12px;
-}
-
-.small-note {
-    color: #8291a6;
-    font-size: 11px;
-    line-height: 1.7;
-}
-
-@media(max-width: 760px) {
-
-    .block-container {
-        padding: .6rem .65rem 1rem !important;
-    }
-
-    .hero {
-        padding: 19px;
-        border-radius: 18px;
-    }
-
-    .hero-kicker {
-        font-size: 9px;
-    }
-
-    .hero-sub {
-        font-size: 12px;
-    }
-
-    .stat-card {
-        padding: 11px;
-        min-height: 80px;
-        border-radius: 13px;
-    }
-
-    .stat-value {
-        font-size: 17px;
-    }
-
-    .stat-label {
-        font-size: 9px;
-    }
-
-    .panel {
-        padding: 13px;
-        border-radius: 16px;
-    }
-
-    .welcome {
-        padding: 12px;
-    }
-
-    .welcome-title {
-        font-size: 14px;
-    }
-
-    .welcome-text {
-        font-size: 12px;
-    }
-
-    .avatar {
-        min-width: 40px;
-        height: 40px;
-        font-size: 21px;
-    }
-
-    .footer {
-        padding: 13px;
-        font-size: 10px;
-    }
-}
-
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+html, body, [class*="css"], .stMarkdown, button, input, textarea {{ font-family:'Plus Jakarta Sans',sans-serif !important; }}
+:root {{ --b1:#0a3a8c; --b2:#1f6feb; --bl:#e8f0fe; --or:#ffc21a; --tx:#12263f; }}
+#MainMenu, footer, header[data-testid="stHeader"] {{ visibility:hidden; height:0; }}
+.stApp {{ background: radial-gradient(1200px 500px at 90% -10%, #d7e6ff 0%, transparent 60%),
+          linear-gradient(180deg,#f3f7ff 0%,#eaf1fb 100%); }}
+.block-container {{ padding:1.2rem 2rem 6rem; max-width:{'420px' if phone else '1180px'}; }}
+{PHONE_CSS}
+/* Sidebar */
+section[data-testid="stSidebar"] {{ background:linear-gradient(180deg,#0a3a8c 0%,#082b6b 100%); }}
+section[data-testid="stSidebar"] * {{ color:#fff !important; }}
+section[data-testid="stSidebar"] .stRadio label {{ background:rgba(255,255,255,.08); border-radius:12px; padding:.5rem .8rem; margin-bottom:.3rem; }}
+.side-logo {{ font-size:1.7rem; font-weight:800; letter-spacing:-.5px; }} .side-logo b {{ color:var(--or); }}
+.side-card {{ background:rgba(255,255,255,.1); border-radius:16px; padding:14px; font-size:.85rem; line-height:1.5; margin-top:14px; }}
+/* Hero */
+.hero {{ background:linear-gradient(120deg,var(--b1),var(--b2)); border-radius:24px; padding:26px 30px; color:#fff;
+  position:relative; overflow:hidden; box-shadow:0 18px 40px rgba(31,111,235,.30); }}
+.hero:after {{ content:""; position:absolute; right:-60px; top:-60px; width:260px; height:260px; border-radius:50%;
+  background:radial-gradient(circle,rgba(255,194,26,.55),transparent 65%); }}
+.hero h1 {{ margin:0; font-size:2.1rem; font-weight:800; letter-spacing:-.8px; color:#fff; }} .hero h1 b {{ color:var(--or); }}
+.hero p {{ margin:.3rem 0 0; opacity:.9; font-size:1rem; }}
+.status {{ display:inline-flex; gap:8px; align-items:center; background:rgba(255,255,255,.16); padding:5px 12px; border-radius:99px; font-size:.78rem; margin-top:12px; }}
+.dot {{ width:9px; height:9px; border-radius:50%; background:#3ddc84; box-shadow:0 0 0 0 rgba(61,220,132,.7); animation:p 1.8s infinite; }}
+.dot.demo {{ background:var(--or); }}
+@keyframes p {{ 70% {{ box-shadow:0 0 0 9px rgba(61,220,132,0); }} 100% {{ box-shadow:0 0 0 0 rgba(61,220,132,0); }} }}
+.chips {{ display:flex; gap:10px; flex-wrap:wrap; margin:16px 0 4px; }}
+.chip {{ background:#fff; border-radius:16px; padding:10px 14px; font-weight:600; font-size:.85rem; color:var(--b1);
+  box-shadow:0 6px 18px rgba(10,58,140,.10); }}
+/* Chat */
+.row {{ display:flex; gap:10px; margin:12px 0; align-items:flex-end; animation:up .35s ease; }}
+.row.user {{ flex-direction:row-reverse; }}
+@keyframes up {{ from {{ opacity:0; transform:translateY(8px); }} to {{ opacity:1; transform:none; }} }}
+.av {{ width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--b2),var(--b1)); display:grid; place-items:center; font-size:1.2rem; flex:none; }}
+.bub {{ max-width:75%; padding:13px 17px; border-radius:20px; line-height:1.55; font-size:.95rem; color:var(--tx); }}
+.bot .bub {{ background:#fff; border-bottom-left-radius:6px; box-shadow:0 6px 20px rgba(10,58,140,.08); }}
+.user .bub {{ background:linear-gradient(135deg,var(--b2),var(--b1)); color:#fff; border-bottom-right-radius:6px; }}
+.tag {{ font-size:.68rem; opacity:.6; margin-top:6px; }}
+/* Boutons d'action rapide */
+div[data-testid="stButton"] button {{ width:100%; text-align:left; justify-content:flex-start; background:#fff; color:var(--b1);
+  border:1px solid #cfe0ff; border-radius:14px; padding:.7rem 1rem; font-weight:600; transition:.2s; box-shadow:0 4px 12px rgba(10,58,140,.06); }}
+div[data-testid="stButton"] button:hover {{ transform:translateY(-2px); border-color:var(--b2); box-shadow:0 10px 22px rgba(31,111,235,.2); color:var(--b2); }}
+[data-testid="stChatInput"] {{ border-radius:18px; box-shadow:0 10px 30px rgba(10,58,140,.15); }}
+.foot {{ text-align:center; color:#5b6f8c; font-size:.78rem; margin-top:26px; }}
 </style>
 """, unsafe_allow_html=True)
 
-
-# ============================================================
-# 3. CHARGEMENT DE LA BASE CHROMADB
-# ============================================================
-
-@st.cache_resource(show_spinner=False)
-def charger_base():
-
-    if not DOSSIER_CHROMA.exists():
-        raise FileNotFoundError(
-            f"Base ChromaDB introuvable : {DOSSIER_CHROMA.resolve()}"
-        )
-
-    embeddings = OllamaEmbeddings(
-        model=MODELE_EMBEDDING,
-        base_url=OLLAMA_URL
-    )
-
-    vectorstore = Chroma(
-        collection_name=COLLECTION_CHROMA,
-        persist_directory=str(DOSSIER_CHROMA),
-        embedding_function=embeddings
-    )
-
-    nombre_passages = vectorstore._collection.count()
-
-    if nombre_passages == 0:
-        raise RuntimeError(
-            "La collection radiologie est vide."
-        )
-
-    retriever = vectorstore.as_retriever(
-        search_kwargs={"k": 4}
-    )
-
-    return vectorstore, retriever, nombre_passages
-
-
-# ============================================================
-# 4. CHARGEMENT DE GEMMA 4
-# ============================================================
-
-@st.cache_resource(show_spinner=False)
-def charger_llm():
-
-    llm = ChatOllama(
-        model=MODELE_LLM,
-        base_url=OLLAMA_URL,
-        temperature=0.1,
-        top_p=0.99
-    )
-
-    return llm
-
-
-# ============================================================
-# 5. CHARGEMENT DU MODELE NLLB
-# ============================================================
-
-@st.cache_resource(show_spinner="Chargement du traducteur NLLB...")
-def charger_traducteur():
-
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "cpu"
-    )
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        MODELE_TRADUCTION
-    )
-
-    dtype = (
-        torch.float16
-        if device == "cuda"
-        else torch.float32
-    )
-
-    modele = AutoModelForSeq2SeqLM.from_pretrained(
-        MODELE_TRADUCTION,
-        torch_dtype=dtype
-    )
-
-    modele.to(device)
-    modele.eval()
-
-    return tokenizer, modele, device
-
-
-# ============================================================
-# 6. FONCTION DE TRADUCTION
-# ============================================================
-
-def traduire(
-    texte,
-    langue_source,
-    langue_cible
-):
-
-    if not texte or not texte.strip():
-        return texte
-
-    if langue_source == langue_cible:
-        return texte
-
-    tokenizer, modele, device = charger_traducteur()
-
-    tokenizer.src_lang = langue_source
-
-    entrees = tokenizer(
-        texte,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512
-    ).to(device)
-
-    id_cible = tokenizer.convert_tokens_to_ids(
-        langue_cible
-    )
-
-    with torch.inference_mode():
-
-        traduction = modele.generate(
-            **entrees,
-            forced_bos_token_id=id_cible,
-            max_new_tokens=256,
-            num_beams=4
-        )
-
-    resultat = tokenizer.batch_decode(
-        traduction,
-        skip_special_tokens=True
-    )[0]
-
-    return resultat.strip()
-
-
-# ============================================================
-# 7. FONCTION PRINCIPALE DU CHATBOT RAG
-# ============================================================
-
-def ask_ai(
-    question,
-    langue,
-    retriever,
-    llm
-):
-
-    code_langue = LANGUES[langue]
-
-    # Étape 1 : traduction vers le français
-
-    question_fr = traduire(
-        question,
-        code_langue,
-        "fra_Latn"
-    )
-
-    # Étape 2 : recherche documentaire
-
-    documents = retriever.invoke(question_fr)
-
-    if not documents:
-
-        reponse_fr = (
-            "Je ne trouve pas cette information dans "
-            "les documents disponibles du service de radiologie. "
-            "Veuillez contacter l'accueil de l'hôpital."
-        )
-
-        return (
-            traduire(
-                reponse_fr,
-                "fra_Latn",
-                code_langue
-            ),
-            []
-        )
-
-    # Étape 3 : construction du contexte
-
-    contexte = "\n\n".join(
-        document.page_content
-        for document in documents
-    )
-
-    # Étape 4 : construction du prompt
-
-    prompt = f"""
-Tu es RadiologyBot AI, un assistant intelligent
-du service de radiologie de l'Hôpital Régional de Thiès.
-
-TA MISSION :
-Répondre aux questions des patients et visiteurs
-concernant les informations du service de radiologie.
-
-RÈGLES IMPORTANTES :
-
-1. Utilise uniquement les informations du contexte.
-2. N'invente jamais les horaires, tarifs, prestations
-   ou coordonnées de l'hôpital.
-3. Si l'information est absente du contexte,
-   dis clairement que tu ne la connais pas.
-4. Ne donne jamais de diagnostic médical.
-5. Ne prescris aucun médicament.
-6. Oriente les patients vers le personnel soignant
-   pour toute question médicale personnelle.
-7. En cas d'urgence, recommande de contacter immédiatement
-   le personnel hospitalier.
-8. Réponds avec un langage simple, poli et professionnel.
-9. Ne prétends jamais avoir enregistré un rendez-vous
-   ou consulté un dossier médical.
-
-CONTEXTE DOCUMENTAIRE :
-
-{contexte}
-
-QUESTION DU PATIENT :
-
-{question_fr}
-
-RÉPONSE :
-"""
-
-    # Étape 5 : génération avec Gemma
-
-    resultat = llm.invoke(prompt)
-
-    reponse_fr = resultat.content.strip()
-
-    # Étape 6 : traduction de la réponse
-
-    reponse_finale = traduire(
-        reponse_fr,
-        "fra_Latn",
-        code_langue
-    )
-
-    # Étape 7 : récupération des sources
-
-    sources = []
-
-    for document in documents:
-
-        metadata = document.metadata or {}
-
-        source = (
-            metadata.get("source")
-            or metadata.get("file_name")
-            or metadata.get("filename")
-            or "Document radiologie"
-        )
-
-        if source not in sources:
-            sources.append(source)
-
-    return reponse_finale, sources
-
-
-# ============================================================
-# 8. BARRE LATERALE
-# ============================================================
-
+# ───────────────────────── Barre latérale ─────────────────────────
 with st.sidebar:
-
-    st.markdown("""
-    <div style="padding:12px 5px 20px;">
-
-        <div style="font-size:12px;
-                    letter-spacing:1.5px;
-                    color:#b8d3f5;
-                    font-weight:800;">
-
-            HÔPITAL RÉGIONAL
-
-        </div>
-
-        <div style="font-size:24px;
-                    font-weight:800;
-                    margin-top:8px;">
-
-            ✚ RadiologyBot
-
-        </div>
-
-        <div style="font-size:12px;
-                    color:#d2e4ff;">
-
-            Votre assistant intelligent
-
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    page = st.radio(
-        "NAVIGATION",
-        [
-            "🏠 Accueil",
-            "🤖 Assistant IA",
-            "🏥 Présentation",
-            "ℹ️ À propos"
-        ]
-    )
-
-    st.markdown("---")
-
-    st.markdown("### Nos engagements")
-
-    st.markdown("""
-    - 🔒 Confidentialité
-    - ⚡ Réponses rapides
-    - 🌍 Multilingue
-    - 🏥 Orientation des patients
-    """)
-
-    st.markdown("---")
-
-    st.caption(
-        "RadiologyBot AI · Version démonstration"
-    )
-
-
-# ============================================================
-# 9. EN-TETE PRINCIPAL
-# ============================================================
-
-col_hero, col_langue = st.columns(
-    [4, 1.2],
-    vertical_alignment="center"
-)
-
-with col_hero:
-
-    st.markdown("""
-    <div class="hero">
-
-        <div class="hero-kicker">
-            HÔPITAL RÉGIONAL DE THIÈS
-            · INNOVATION EN SANTÉ
-        </div>
-
-        <div class="hero-title">
-            ✚ Radiology<span>Bot AI</span>
-        </div>
-
-        <div class="hero-sub">
-            Votre assistant intelligent du service de radiologie
-        </div>
-
-        <div class="online">
-            <span class="dot"></span>
-            Assistant conversationnel
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_langue:
-
-    st.markdown("#### 🌍 Langue")
-
-    langue = st.selectbox(
-        "Choisir la langue",
-        list(LANGUES.keys()),
-        label_visibility="collapsed"
-    )
-
-
-# ============================================================
-# 10. CONNEXION AUX SERVICES
-# ============================================================
-
-base = None
-retriever = None
-nombre_passages = 0
-llm = None
-erreur = None
-
-try:
-
-    base, retriever, nombre_passages = charger_base()
-
-    llm = charger_llm()
-
-    statut = True
-
-except Exception as e:
-
-    statut = False
-    erreur = str(e)
-
-
-# ============================================================
-# 11. TABLEAU DE BORD
-# ============================================================
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-c1, c2, c3 = st.columns(3)
-
-with c1:
-
-    st.markdown("""
-    <div class="stat-card">
-
-        <div class="stat-label">
-            SERVICE HOSPITALIER
-        </div>
-
-        <div class="stat-value">
-            Radiologie
-        </div>
-
-        <div class="stat-description">
-            Hôpital Régional de Thiès
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-with c2:
-
-    valeur = (
-        str(nombre_passages)
-        if statut
-        else "—"
-    )
-
-    st.markdown(f"""
-    <div class="stat-card">
-
-        <div class="stat-label">
-            BASE DOCUMENTAIRE
-        </div>
-
-        <div class="stat-value">
-            {valeur}
-        </div>
-
-        <div class="stat-description">
-            Passages indexés dans ChromaDB
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-
-    st.markdown("""
-    <div class="stat-card">
-
-        <div class="stat-label">
-            LANGUES
-        </div>
-
-        <div class="stat-value">
-            03
-        </div>
-
-        <div class="stat-description">
-            Français · English · Wolof
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-
-if not statut:
-
-    st.error(
-        "Le moteur IA n'est pas connecté. "
-        "Vérifie Ollama et la base ChromaDB."
-    )
-
-    with st.expander("Détails techniques"):
-
-        st.code(erreur)
-
-    st.stop()
-
-
-# ============================================================
-# 12. PAGE ACCUEIL
-# ============================================================
-
-if page == "🏠 Accueil":
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="panel">
-
-        <div class="panel-title">
-            Bienvenue sur RadiologyBot AI
-        </div>
-
-        <p style="color:#637791;line-height:1.9;">
-
-        Une nouvelle expérience d'accueil et d'information
-        pour les patients du service de radiologie de
-        l'Hôpital Régional de Thiès.
-
-        Notre assistant intelligent facilite l'accès
-        aux informations documentées du service.
-
-        </p>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    f1, f2, f3 = st.columns(3)
-
-    cartes = [
-        (
-            "🤖",
-            "Assistant intelligent",
-            "Dialogue avec les patients."
-        ),
-        (
-            "🔎",
-            "Recherche documentaire",
-            "Recherche RAG dans les documents."
-        ),
-        (
-            "🌍",
-            "Multilingue",
-            "Français, anglais et wolof."
-        )
-    ]
-
-    for col, carte in zip([f1, f2, f3], cartes):
-
-        with col:
-
-            st.markdown(f"""
-            <div class="feature">
-
-                <div class="feature-icon">
-                    {carte[0]}
-                </div>
-
-                <div class="feature-title">
-                    {carte[1]}
-                </div>
-
-                <div class="feature-description">
-                    {carte[2]}
-                </div>
-
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if st.button(
-        "🚀 Accéder à l'assistant intelligent",
-        use_container_width=True
-    ):
-
-        st.session_state["page_assistant"] = True
+    st.markdown('<div class="side-logo">💙 Hospital<b>AI</b></div>', unsafe_allow_html=True)
+    st.caption("Votre assistant intelligent à l'hôpital")
+    st.radio("Affichage", ["💻 Ordinateur", "📱 Téléphone"], key="vue")
+    langue = st.selectbox("🌍 Langue / Làkk", list(LANGUES))
+    st.markdown("""<div class="side-card"><b>Hôpital Régional de Thiès</b><br>
+    Service de radiologie<br>🕒 Assistant disponible 24h/24 – 7j/7<br>
+    ⚠️ Information générale : aucun diagnostic médical. En cas d'urgence, appelez les urgences.</div>""",
+                unsafe_allow_html=True)
+    if st.button("🗑️ Nouvelle conversation"):
+        st.session_state.msgs = []
         st.rerun()
 
-
-# ============================================================
-# 13. PAGE ASSISTANT IA
-# ============================================================
-
-elif page == "🤖 Assistant IA":
-
-    gauche, droite = st.columns(
-        [2.1, 1],
-        gap="large"
-    )
-
-    # --------------------------------------------------------
-    # PARTIE CONVERSATION
-    # --------------------------------------------------------
-
-    with gauche:
-
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class="welcome">
-
-            <div class="avatar">
-                🤖
-            </div>
-
-            <div>
-
-                <div class="welcome-title">
-                    Bonjour ! Je suis RadiologyBot AI.
-                </div>
-
-                <div class="welcome-text">
-
-                    Je suis votre assistant intelligent
-                    du service de radiologie.
-
-                    Je peux vous renseigner sur les informations
-                    disponibles du service.
-
-                </div>
-
-            </div>
-
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Initialisation de la mémoire de conversation
-
-        if "messages" not in st.session_state:
-
-            st.session_state.messages = []
-
-        # Affichage des anciens messages
-
-        for message in st.session_state.messages:
-
-            with st.chat_message(
-                message["role"],
-                avatar=(
-                    "🤖"
-                    if message["role"] == "assistant"
-                    else "👤"
-                )
-            ):
-
-                st.markdown(message["content"])
-
-                if message.get("sources"):
-
-                    with st.expander(
-                        "📚 Documents consultés"
-                    ):
-
-                        for source in message["sources"]:
-
-                            st.caption(f"• {source}")
-
-        # Zone de saisie
-
-        question = st.chat_input(
-            "Posez votre question ici..."
-        )
-
-        if question:
-
-            # Message utilisateur
-
-            st.session_state.messages.append({
-                "role": "user",
-                "content": question
-            })
-
-            with st.chat_message(
-                "user",
-                avatar="👤"
-            ):
-
-                st.markdown(question)
-
-            # Réponse du chatbot
-
-            with st.chat_message(
-                "assistant",
-                avatar="🤖"
-            ):
-
-                with st.spinner(
-                    "Recherche dans les documents et génération de la réponse..."
-                ):
-
-                    try:
-
-                        reponse, sources = ask_ai(
-                            question,
-                            langue,
-                            retriever,
-                            llm
-                        )
-
-                    except Exception as e:
-
-                        reponse = (
-                            "Je rencontre actuellement une difficulté "
-                            "technique. Veuillez réessayer."
-                        )
-
-                        sources = []
-
-                        st.error(str(e))
-
-                st.markdown(reponse)
-
-                if sources:
-
-                    with st.expander(
-                        "📚 Documents consultés"
-                    ):
-
-                        for source in sources:
-
-                            st.caption(f"• {source}")
-
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": reponse,
-                "sources": sources
-            })
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # --------------------------------------------------------
-    # PARTIE QUESTIONS RAPIDES
-    # --------------------------------------------------------
-
-    with droite:
-
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-
-        st.markdown(
-            '<div class="panel-title">Comment puis-je vous aider ?</div>',
-            unsafe_allow_html=True
-        )
-
-        st.caption(
-            "Choisissez une question pour commencer."
-        )
-
-        questions = [
-            "Présentez-moi le service de radiologie",
-            "Quels sont les horaires du service ?",
-            "Quels examens sont disponibles ?",
-            "Comment préparer un examen ?",
-            "Où se trouve le service ?"
-        ]
-
-        for i, q in enumerate(questions):
-
-            if st.button(
-                q,
-                key=f"question_{i}",
-                use_container_width=True
-            ):
-
-                st.session_state["question_rapide"] = q
-                st.rerun()
-
-        st.markdown("---")
-
-        st.markdown("### 🔒 Confidentialité")
-
-        st.markdown("""
-        <div class="small-note">
-
-        Ne saisissez pas de données personnelles
-        ou de numéro de dossier médical.
-
-        L'assistant fournit des informations générales.
-        Il ne remplace pas un professionnel de santé.
-
-        </div>
-        """, unsafe_allow_html=True)
-
-        if st.button(
-            "↻ Nouvelle conversation",
-            use_container_width=True
-        ):
-
-            st.session_state.messages = []
-
-            st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Traitement des questions rapides
-
-    if "question_rapide" in st.session_state:
-
-        q = st.session_state.pop("question_rapide")
-
-        st.session_state.messages.append({
-            "role": "user",
-            "content": q
-        })
-
-        with st.spinner("RadiologyBot AI prépare sa réponse..."):
-
-            try:
-
-                rep, src = ask_ai(
-                    q,
-                    langue,
-                    retriever,
-                    llm
-                )
-
-            except Exception:
-
-                rep = (
-                    "Une difficulté technique est survenue. "
-                    "Veuillez réessayer."
-                )
-
-                src = []
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": rep,
-            "sources": src
-        })
-
-        st.rerun()
-
-
-# ============================================================
-# 14. PAGE PRESENTATION
-# ============================================================
-
-elif page == "🏥 Présentation":
-
-    st.markdown("""
-    <div class="panel">
-
-        <div class="panel-title">
-            RadiologyBot AI : une innovation au service des patients
-        </div>
-
-        <p style="color:#637791;line-height:1.9;">
-
-        RadiologyBot AI est un assistant conversationnel
-        développé pour faciliter l'accès aux informations
-        du service de radiologie de l'Hôpital Régional de Thiès.
-
-        Grâce à l'intelligence artificielle et à la recherche
-        documentaire augmentée (RAG), l'application recherche
-        des informations dans une base documentaire avant
-        de générer ses réponses.
-
-        </p>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    a, b = st.columns(2)
-
-    with a:
-
-        st.markdown("""
-        <div class="feature">
-
-            <div class="feature-icon">🧠</div>
-
-            <div class="feature-title">
-                Intelligence artificielle
-            </div>
-
-            <div class="feature-description">
-                Gemma 4 E4B et BGE-M3.
-            </div>
-
-        </div>
-        """, unsafe_allow_html=True)
-
-    with b:
-
-        st.markdown("""
-        <div class="feature">
-
-            <div class="feature-icon">📚</div>
-
-            <div class="feature-title">
-                Recherche augmentée RAG
-            </div>
-
-            <div class="feature-description">
-                LangChain et ChromaDB.
-            </div>
-
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.info(
-        "Cette version est un prototype d'information. "
-        "Les rendez-vous, dossiers patients et autres services "
-        "ne sont pas connectés."
-    )
-
-
-# ============================================================
-# 15. PAGE A PROPOS
-# ============================================================
-
-elif page == "ℹ️ À propos":
-
-    st.markdown("""
-    <div class="panel">
-
-        <div class="panel-title">
-            À propos du projet
-        </div>
-
-        **RadiologyBot AI**
-
-        Application de démonstration d'un assistant
-        conversationnel hospitalier.
-
-        **Technologies :**
-
-        - Python
-        - Streamlit
-        - LangChain
-        - Ollama
-        - Gemma 4 E4B
-        - BGE-M3
-        - ChromaDB
-        - NLLB-200
-
-        **Objectif :**
-
-        Améliorer l'accès aux informations hospitalières
-        et faciliter l'orientation des patients.
-
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ============================================================
-# 16. PIED DE PAGE
-# ============================================================
-
-st.markdown("""
-<div class="footer">
-
-    <span>
-        <b>✚ RadiologyBot AI</b>
-        · Hôpital Régional de Thiès
-    </span>
-
-    <span>
-        La technologie au service de votre santé
-    </span>
-
-</div>
+# ───────────────────────── En-tête ─────────────────────────
+rag_ok = charger_rag() is not None
+st.markdown(f"""
+<div class="hero"><h1>Hospital<b>AI</b></h1>
+<p>Bonjour 👋 Je suis votre assistant intelligent de l'Hôpital Régional de Thiès.<br>Je vous informe, vous oriente et réponds à vos questions.</p>
+<span class="status"><span class="dot {'' if rag_ok else 'demo'}"></span>{'En ligne · base de connaissances active' if rag_ok else 'Mode démonstration · base RAG non détectée'}</span></div>
+<div class="chips"><span class="chip">🕒 Infos 24h/24</span><span class="chip">📅 Rendez-vous</span>
+<span class="chip">📍 Orientation</span><span class="chip">⚡ Réponses instantanées</span><span class="chip">🌐 Français · English · Wolof</span></div>
 """, unsafe_allow_html=True)
 
+# ───────────────────────── Actions rapides ─────────────────────────
+ACTIONS = {
+    "🏥 Informations sur l'hôpital": "Pouvez-vous me présenter le service de radiologie ?",
+    "🕒 Horaires et contacts": "Quels sont les horaires du service de radiologie ?",
+    "📅 Prendre un rendez-vous": "Comment prendre un rendez-vous en radiologie ?",
+    "📄 Documents à apporter": "Quels documents dois-je apporter ?",
+    "🩺 Services disponibles": "Quels examens sont disponibles en radiologie ?",
+    "💬 Autre question": None,
+}
+st.markdown("#### Que souhaitez-vous faire aujourd'hui ?")
+cols = st.columns(1 if phone else 3)
+pending = None
+for i, (label, q) in enumerate(ACTIONS.items()):
+    if cols[i % len(cols)].button(label, key=f"a{i}") and q:
+        pending = q
+
+# ───────────────────────── Conversation ─────────────────────────
+st.session_state.setdefault("msgs", [])
+saisie = st.chat_input("Posez votre question ici…")
+question = saisie or pending
+
+if question:
+    st.session_state.msgs.append({"role": "user", "text": question})
+    with st.spinner("HospitalAI réfléchit…"):
+        try:
+            rep, src, mode = ask_ai(question, langue)
+        except Exception as e:
+            rep, src, mode = f"Une erreur est survenue : {e}", [], "erreur"
+    st.session_state.msgs.append({"role": "bot", "text": rep, "src": src, "mode": mode})
+
+
+def bulle(m):
+    txt = html.escape(m["text"]).replace("\n", "<br>")
+    if m["role"] == "user":
+        return f'<div class="row user"><div class="bub">{txt}</div></div>'
+    tag = "Source : base documentaire de la radiologie" if m.get("mode") == "rag" else "Mode démonstration"
+    return f'<div class="row bot"><div class="av">🤖</div><div class="bub">{txt}<div class="tag">{tag}</div></div></div>'
+
+
+for m in st.session_state.msgs:
+    st.markdown(bulle(m), unsafe_allow_html=True)
+    if m["role"] == "bot" and m.get("src"):
+        with st.expander("📚 Passages utilisés pour répondre"):
+            for p in m["src"]:
+                st.caption(p)
+
+st.markdown('<div class="foot">HospitalAI · La technologie au service de votre santé · Hôpital Régional de Thiès</div>',
+            unsafe_allow_html=True)
