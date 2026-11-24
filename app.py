@@ -2507,850 +2507,614 @@
 # )
 # Fin 
 # Nouveau
-# import base64
-# import re
-# from datetime import datetime
-# from pathlib import Path
-
-# import streamlit as st
-
-# # =====================================================
-# # 1. MOTEUR RAG (chatbot.py)  — inchangé
-# # =====================================================
-# try:
-#     from chatbot import ask_ai_stream, prechauffer, service_pret
-#     ERREUR_IMPORT = None
-# except Exception as erreur:
-#     ask_ai_stream = None
-#     prechauffer = None
-#     ERREUR_IMPORT = erreur
-
-#     def service_pret():
-#         return False
-
-
-# # =====================================================
-# # 2. CONFIGURATION
-# # =====================================================
-# NOM_BOT = "MediBot"
-# NOM_HOPITAL = "Hôpital Régional de Thiès"
-# NOM_UTILISATEUR = "Ibrahima Dieng"   # affiché en haut à droite
-# DOSSIER = Path(__file__).parent
-
-# st.set_page_config(
-#     page_title=f"{NOM_BOT} — {NOM_HOPITAL}",
-#     page_icon="🩺",
-#     layout="wide",
-#     initial_sidebar_state="expanded",
-# )
-
-# LANGUES = {"Wolof": "wolof", "Français": "français", "English": "anglais"}
-
-# # =====================================================
-# # 3. DÉTECTION DE LANGUE (Wolof / Français / English)
-# # =====================================================
-# MOTS_WOLOF_FORTS = {
-#     "wolof", "nanga", "def", "naka", "jàmm", "jamm", "jërëjëf", "jerejef", "dama", "bëgg",
-#     "begg", "laaj", "laajal", "serwiis", "kayit", "yan", "ban", "waxtu", "lañuy", "lanuy",
-#     "fii", "ubbeeku", "ubbi", "tontu", "waaw", "deedeet", "déedéet", "ñu", "dëkk", "toog",
-#     "jàppale", "jappale", "yoon", "fekk", "nekk", "nekkul", "ndax", "léegi", "legi",
-#     "asalaamaalekum", "salaam", "maalekum", "lii", "loolu", "lan", "walla", "mbaa", "rekk",
-#     "mën", "men", "dafa", "amul", "xam", "xamul", "ngi", "maa", "kaay", "dem", "indi",
-#     "xibaar", "doktoor", "jëm", "fan", "foo", "lu", "dinaa", "dina", "ekografi", "lopitaal",
-#     "ana", "ngir", "sama", "suñu", "sunu", "nan", "nuyoo", "nuyo", "sant", "sante",
-# }
-# MOTS_WOLOF_FAIBLES = {"bi", "yi", "ci", "ak", "sa", "am", "la", "na", "di", "du", "bu", "su"}
-# MOTS_FR = {
-#     "le", "la", "les", "des", "du", "de", "un", "une", "est", "sont", "je", "vous", "nous",
-#     "quel", "quels", "quelle", "quelles", "où", "ou", "et", "pour", "dans", "avec", "sur",
-#     "que", "qui", "quoi", "comment", "combien", "puis", "peut", "bonjour", "salut", "bonsoir",
-#     "merci", "horaires", "service", "services", "examens", "examen", "documents", "apporter",
-#     "rendez-vous", "faut", "dois", "il", "elle", "au", "aux", "ce", "cette", "mon", "ma",
-#     "mes", "radiologie", "est-ce", "ai", "suis", "veux", "voudrais", "besoin", "échographie",
-#     "echographie", "scanner", "irm", "préparation", "preparation", "résultats", "resultats",
-#     "hôpital", "hopital", "faire", "tarif", "tarifs", "ouvert", "ouverture", "fermeture",
-#     "svp", "s'il", "plaît", "conseils", "santé", "nos",
-# }
-# MOTS_EN = {
-#     "the", "is", "are", "what", "where", "how", "do", "does", "can", "i", "you", "my", "your",
-#     "which", "when", "who", "with", "for", "and", "of", "to", "hello", "hi", "thanks", "thank",
-#     "please", "hours", "appointment", "need", "want", "should", "bring", "open", "available",
-#     "department", "examinations", "exam", "exams", "it", "there", "this", "that", "me",
-#     "ultrasound", "ct", "mri", "xray", "x-ray", "results", "preparation", "cost", "price",
-#     "hospital", "radiology",
-# }
-# COMMANDES_LANGUE = {
-#     "wolof": "Wolof", "français": "Français", "francais": "Français", "french": "Français",
-#     "anglais": "English", "english": "English",
-# }
-# CONFIRMATIONS = {
-#     "Wolof": "Waaw, dinaa la tontu ci **wolof** ci saa si. Laajal sa laaj ci serwiisu radiologie.",
-#     "Français": "Parfait, je vous répondrai directement en **français**. Posez votre question sur le service de radiologie.",
-#     "English": "Understood, I will answer directly in **English**. Ask your question about the radiology department.",
-# }
-# MESSAGES_ERREUR = {
-#     "Français": {
-#         "offline": "Le moteur d'assistance est momentanément indisponible. Veuillez réessayer ou vous adresser à l'accueil de la radiologie.",
-#         "no_answer": "Aucune réponse n'a pu être générée. Merci de reformuler votre question.",
-#         "thinking": "Consultation des documents du service de radiologie...",
-#     },
-#     "Wolof": {
-#         "offline": "Serwiis bi amul léegi. Jéemaatal ci kanam tuuti walla nga dem ci accueil radiologie.",
-#         "no_answer": "Manul naa tontu. Jéemaatal di laaj ci beneen anam.",
-#         "thinking": "Maa ngi seet ci kayiti serwiisu radiologie bi...",
-#     },
-#     "English": {
-#         "offline": "The assistant service is temporarily unavailable. Please try again later or contact the radiology front desk.",
-#         "no_answer": "I could not generate a response. Please rephrase your question.",
-#         "thinking": "Searching radiology department knowledge base...",
-#     },
-# }
-
-
-# def mots(texte: str) -> list[str]:
-#     return re.findall(r"[\w'’\-àâäçéèêëîïôöùûüÿñœ]+", texte.lower())
-
-
-# def commande_langue(texte: str) -> str | None:
-#     tokens = mots(texte)
-#     if 0 < len(tokens) <= 3:
-#         for tok in tokens:
-#             if tok in COMMANDES_LANGUE:
-#                 return COMMANDES_LANGUE[tok]
-#     return None
-
-
-# def detecter_langue(texte: str, langue_precedente: str = "Français") -> str:
-#     texte_min = texte.lower().strip()
-#     tokens = mots(texte_min)
-#     if not tokens:
-#         return langue_precedente
-
-#     if re.search(
-#         r"[ñëà]|jàmm|jërëjëf|asalaamaalekum|ubbeeku|laajal|serwiis|"
-#         r"\b(dama|bëgg|begg|nanga|naka|waxtu|kayit|ekografi|lopitaal|"
-#         r"waaw|deedeet|déedéet|mën|men|lañuy|lanuy|dinaa|ana)\b",
-#         texte_min,
-#     ):
-#         return "Wolof"
-
-#     sw = sum(2.5 for m in tokens if m in MOTS_WOLOF_FORTS) + sum(0.6 for m in tokens if m in MOTS_WOLOF_FAIBLES)
-#     sf = sum(1.0 for m in tokens if m in MOTS_FR)
-#     se = sum(1.0 for m in tokens if m in MOTS_EN)
-#     if re.search(r"[çèùêôéîï]", texte_min):
-#         sf += 1.5
-#     if re.search(r"\b(i'm|i am|can i|do you|what is|where is|how do)\b", texte_min):
-#         se += 2.0
-#     if sw >= 1.5 and sw >= sf * 0.75 and sw >= se:
-#         return "Wolof"
-
-#     scores = {"Wolof": sw, "Français": sf, "English": se}
-#     meilleure = max(scores, key=scores.get)
-#     return meilleure if scores[meilleure] > 0 else langue_precedente
-
-
-# # =====================================================
-# # 4. IMAGES (robot, utilisateur, logo, photo de l'hôpital)
-# # =====================================================
-# ROBOT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-# <style>.oeil{transform-box:fill-box;transform-origin:center;animation:cl 3s infinite}@keyframes cl{0%,86%,100%{transform:scaleY(1)}90%,94%{transform:scaleY(0.05)}}</style>
-# <circle cx="60" cy="60" r="60" fill="#d6e8fb"/>
-# <line x1="60" y1="22" x2="60" y2="32" stroke="#4b8fe2" stroke-width="3" stroke-linecap="round"/>
-# <circle cx="60" cy="20" r="4" fill="#4b8fe2"/>
-# <rect x="28" y="32" width="64" height="48" rx="22" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
-# <rect x="36" y="40" width="48" height="32" rx="14" fill="#101a33"/>
-# <g class="oeil"><ellipse cx="49" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="46" cy="50" r="3.4" fill="#ffffff"/></g>
-# <g class="oeil"><ellipse cx="71" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="68" cy="50" r="3.4" fill="#ffffff"/></g>
-# <path d="M54 68 Q60 71.5 66 68" fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round"/>
-# <path d="M38 86 Q60 80 82 86 L86 112 Q60 120 34 112 Z" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
-# <path d="M50 88 Q60 104 70 88" fill="none" stroke="#4b8fe2" stroke-width="2.5"/>
-# </svg>"""
-
-# USER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-# <circle cx="60" cy="60" r="60" fill="#d6e8fb"/>
-# <circle cx="60" cy="48" r="16" fill="#1d5fd0"/>
-# <path d="M28 94 Q60 58 92 94 Q60 108 28 94 Z" fill="#1d5fd0"/>
-# </svg>"""
-
-
-# def ecrire_avatar(nom: str, svg: str, defaut: str) -> str:
-#     try:
-#         chemin = DOSSIER / nom
-#         chemin.write_text(" ".join(svg.split()), encoding="utf-8")
-#         return str(chemin)
-#     except Exception:
-#         return defaut
-
-
-# AVATAR_BOT = ecrire_avatar("medibot_avatar.svg", ROBOT_SVG, "🤖")
-# AVATAR_USER = (str(DOSSIER / "ibrahima.jpg") if (DOSSIER / "ibrahima.jpg").exists()
-#                else ecrire_avatar("user_avatar.svg", USER_SVG, "🧑"))
-
-
-# def image_b64(*noms: str) -> str | None:
-#     """Cherche une image (hopital.jpg, logo.png...) à côté d'app.py."""
-#     for nom in noms:
-#         chemin = DOSSIER / nom
-#         if chemin.exists():
-#             mime = "png" if chemin.suffix.lower() == ".png" else "jpeg"
-#             return f"data:image/{mime};base64," + base64.b64encode(chemin.read_bytes()).decode()
-#     return None
-
-
-# PHOTO = image_b64("hopital.jpg", "hopital.jpeg", "hopital.png")
-# LOGO = image_b64("logo.png", "logo.jpg")
-# PHOTO_USER = image_b64("ibrahima.jpg", "ibrahima.png")
-
-# LOGO_SVG = """<svg viewBox="0 0 100 100" width="84" height="84" xmlns="http://www.w3.org/2000/svg">
-# <circle cx="50" cy="50" r="47" fill="#ffffff" stroke="#f5c518" stroke-width="5"/>
-# <text x="50" y="52" text-anchor="middle" font-family="Arial" font-weight="800" font-size="32" fill="#0a3a82">H+</text>
-# <path d="M18 62 Q34 52 50 62 T82 62 L82 70 Q66 80 50 70 T18 70 Z" fill="#1d7fd6"/></svg>"""
-
-# CROIX_SVG = """<svg viewBox="0 0 64 64" width="62" height="62" xmlns="http://www.w3.org/2000/svg">
-# <rect x="4" y="4" width="56" height="56" rx="14" fill="#0f3f87"/>
-# <rect x="12" y="24" width="40" height="16" fill="#0f3f87"/>
-# <path d="M12 33 H24 L28 22 L34 44 L39 30 L42 33 H52" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
-
-# COEUR_SVG = """<svg viewBox="0 0 64 64" width="52" height="52" xmlns="http://www.w3.org/2000/svg">
-# <path d="M32 56 C8 38 6 22 16 15 C24 10 30 16 32 21 C34 16 40 10 48 15 C58 22 56 38 32 56 Z" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"/>
-# <path d="M12 32 H24 L28 24 L34 40 L38 30 H52" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
-
-
-# # =====================================================
-# # 5. STYLE (thème clair, barre latérale bleu marine)
-# # =====================================================
-# fond_banniere = (
-#     f"background-image: url('{PHOTO}'); background-size: cover; background-position: left center;"
-#     if PHOTO else "background: linear-gradient(135deg,#cfe3fa,#a9c9f1);"
-# )
-# fond_carte = (
-#     f"background-image: linear-gradient(180deg, rgba(8,44,99,0.80) 0%, rgba(8,44,99,0.15) 55%, rgba(8,44,99,0) 100%), url('{PHOTO}');"
-#     if PHOTO else "background-image: linear-gradient(160deg,#2f6fd6,#0a3a82);"
-# )
-
-# st.markdown(
-#     f"""
-# <style>
-# #MainMenu, footer {{ visibility: hidden; }}
-# header[data-testid="stHeader"] {{ background: transparent; }}
-# .stApp {{ background: #f4f7fc; }}
-# .stApp, .stApp p, .stApp li, .stApp span, .stApp label, .stApp div {{ color: #1e293b; }}
-# .main .block-container {{ max-width: 1000px; padding: 0.6rem 1.6rem 6rem 1.6rem; }}
-
-# /* ---------- Barre latérale ---------- */
-# [data-testid="stSidebar"] {{ background: linear-gradient(180deg,#0b3a7e 0%,#082c63 100%); }}
-# [data-testid="stSidebar"] * {{ color: #ffffff; }}
-# [data-testid="stSidebar"] .brand {{ text-align: center; padding: 8px 0 18px 0; line-height: 1.2; }}
-# [data-testid="stSidebar"] .brand img {{ width: 84px; height: 84px; border-radius: 50%; }}
-# [data-testid="stSidebar"] .brand div {{ font-size: 1.28rem; font-weight: 700; margin-top: 10px; }}
-# [data-testid="stSidebar"] div.stButton > button {{
-#     justify-content: flex-start; width: 100%; min-height: 46px; border-radius: 12px;
-#     background: transparent; border: none; box-shadow: none; font-size: 1rem; font-weight: 500;
-# }}
-# [data-testid="stSidebar"] div.stButton > button:hover {{ background: rgba(255,255,255,0.10); }}
-# [data-testid="stSidebar"] div.stButton > button[kind="primary"],
-# [data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
-#     background: linear-gradient(90deg,#2f6fd6,#4a86e8); font-weight: 600;
-#     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
-# }}
-# [data-testid="stSidebar"] div.stButton > button p {{ color: #ffffff !important; }}
-# [data-testid="stSidebar"] div.stDownloadButton > button {{
-#     width: 100%; border-radius: 12px; background: rgba(255,255,255,0.10);
-#     border: 1px solid rgba(255,255,255,0.25); color: #ffffff;
-# }}
-# [data-testid="stSidebar"] div.stDownloadButton > button p {{ color: #ffffff !important; }}
-# .side-card {{
-#     {fond_carte} background-size: cover; background-position: center;
-#     border-radius: 16px; padding: 18px 16px; margin-top: 18px; height: 240px; background-color: #0a3a82;
-#     display: flex; align-items: flex-start; gap: 12px; font-weight: 600; font-size: 1.05rem; line-height: 1.25;
-# }}
-# .side-card, .side-card * {{ color: #ffffff !important; }}
-
-# /* ---------- Barre du haut + bannière ---------- */
-# .topbar {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 4px 14px 4px; }}
-# .topbar .slogan {{ border-left: 2px solid #94a3b8; padding-left: 14px; font-style: italic; font-weight: 600; color: #1e3a6e !important; }}
-# .topbar .user {{ display: flex; align-items: center; gap: 10px; font-weight: 500; }}
-# .topbar .user .pic {{
-#     width: 44px; height: 44px; border-radius: 50%; background: #d6e8fb; border: 2px solid #ffffff; box-shadow: 0 2px 8px rgba(15,63,135,0.25);
-#     display: flex; align-items: center; justify-content: center; overflow: hidden;
-# }}
-# .topbar .user .pic img {{ width: 100%; height: 100%; object-fit: cover; }}
-# .banner {{
-#     display: flex; overflow: hidden; border-radius: 18px; min-height: 150px; margin-bottom: 18px;
-#     background: linear-gradient(100deg,#e4effc 0%,#cfe2f9 60%,#b4d2f5 100%);
-#     border: 1px solid #dbe6f5; box-shadow: 0 4px 14px rgba(15,63,135,0.08);
-# }}
-# .banner .photo {{ flex: 0 0 36%; min-height: 150px; {fond_banniere} }}
-# .banner .txt {{ flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 14px 24px; }}
-# .banner .titre {{ display: flex; align-items: center; gap: 14px; }}
-# .banner h1 {{ margin: 0; font-size: 2.5rem; font-weight: 800; color: #0f3f87 !important; line-height: 1; padding: 0; }}
-# .banner .sous {{ font-size: 1.25rem; font-weight: 500; color: #1e3a6e !important; margin: 4px 0 8px 0; }}
-# .banner .acc {{ font-style: italic; font-size: 0.98rem; color: #1e293b !important; }}
-# @media (max-width: 760px) {{
-#     .banner .photo {{ display: none; }}
-#     .banner h1 {{ font-size: 1.9rem; }}
-#     .topbar .slogan {{ font-size: 0.85rem; }}
-# }}
-
-# /* ---------- Conversation ---------- */
-# [data-testid="stChatMessage"] {{ background: transparent; border: none; box-shadow: none; padding: 6px 0; gap: 14px; align-items: flex-start; }}
-# [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{ flex-direction: row-reverse; }}
-# [data-testid^="stChatMessageAvatar"] {{ width: 56px; height: 56px; border-radius: 50%; background: #d6e8fb; }}
-# [data-testid^="stChatMessageAvatar"] img {{ border-radius: 50%; object-fit: cover; width: 100%; height: 100%; }}
-# [data-testid="stChatMessageContent"] {{
-#     background: #e9eff8; border: 1px solid #dde6f3; border-radius: 6px 18px 18px 18px;
-#     padding: 14px 20px; width: fit-content; max-width: 78%;
-# }}
-# [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {{
-#     background: #1560c7; border-color: #1560c7; border-radius: 18px 6px 18px 18px; margin-left: auto;
-# }}
-# [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] * {{ color: #ffffff !important; }}
-# [data-testid="stChatMessageContent"] p, [data-testid="stChatMessageContent"] li {{ font-size: 1.02rem; line-height: 1.6; }}
-# .heure {{ text-align: right; font-size: 0.78rem; color: #8a97ab !important; margin-top: 4px; }}
-
-# /* ---------- Boutons de la zone principale (puces) ---------- */
-# [data-testid="stMain"] div.stButton > button {{
-#     border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: 0.92rem; font-weight: 600;
-#     background: #ffffff; border: 1px solid #7aa7e8; color: #1d4f9f; box-shadow: none; transition: all .15s ease;
-# }}
-# [data-testid="stMain"] div.stButton > button p {{ color: #1d4f9f !important; }}
-# [data-testid="stMain"] div.stButton > button:hover {{ background: #eaf2fe; border-color: #1d5fd0; }}
-
-# /* ---------- Cartes des pages ---------- */
-# .carte {{ background: #ffffff; border: 1px solid #dbe6f5; border-radius: 16px; padding: 22px 26px; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(15,63,135,0.06); }}
-# .carte h3 {{ margin: 0 0 10px 0; color: #0f3f87 !important; }}
-# .avis {{ font-size: 0.9rem; color: #475569 !important; background: #fff8e6; border: 1px solid #f3dd9a; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0; }}
-
-# /* ---------- Zone de saisie ---------- */
-# [data-testid="stBottom"], [data-testid="stBottom"] > div {{ background: #f4f7fc !important; }}
-# [data-testid="stChatInput"], [data-testid="stChatInput"] > div, [data-testid="stChatInput"] > div > div {{
-#     background: #ffffff !important; border-radius: 999px !important; border-color: #dbe6f5 !important;
-# }}
-# [data-testid="stChatInput"] {{ border: 1px solid #dbe6f5 !important; box-shadow: 0 2px 10px rgba(15,63,135,0.08) !important; }}
-# [data-testid="stChatInput"] textarea {{ color: #1e293b !important; -webkit-text-fill-color: #1e293b !important; caret-color: #1d5fd0 !important; background: transparent !important; }}
-# [data-testid="stChatInput"] textarea::placeholder {{ color: #64748b !important; -webkit-text-fill-color: #64748b !important; opacity: 1 !important; }}
-# [data-testid="stChatInput"] button {{ background: #1560c7 !important; border-radius: 14px !important; color: #ffffff !important; }}
-# [data-testid="stChatInput"] button svg {{ fill: #ffffff !important; color: #ffffff !important; }}
-# /* ====== VISIBILITÉ : texte blanc éclatant sur bleu de nuit ====== */
-# [data-testid="stSidebar"], [data-testid="stSidebar"] * {{ color: #ffffff !important; }}
-# [data-testid="stSidebar"] .brand div {{ color: #ffffff !important; font-weight: 800; font-size: 1.3rem; text-shadow: 0 1px 8px rgba(0,0,0,0.5); }}
-# [data-testid="stSidebar"] div.stButton > button {{ justify-content: flex-start !important; padding-left: 16px !important; }}
-# [data-testid="stSidebar"] div.stButton > button > div {{ justify-content: flex-start !important; width: 100%; }}
-# [data-testid="stSidebar"] div.stButton > button p {{ text-align: left; font-weight: 600; font-size: 1.02rem; color: #ffffff !important; }}
-# [data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarCollapseButton"] button {{ color: #ffffff !important; fill: #ffffff !important; }}
-# [data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {{ color: #dbeafe !important; font-weight: 600; }}
-
-# /* ====== CHAMP DE LANGUE : bleu de nuit, texte blanc ====== */
-# [data-testid="stSidebar"] [data-testid="stSelectbox"] label p {{ font-weight: 700; font-size: 0.98rem; color: #ffffff !important; }}
-# [data-testid="stSidebar"] [data-baseweb="select"] > div {{
-#     background: #04122e !important; border: 2px solid #5eb4ff !important; border-radius: 14px !important;
-#     min-height: 50px; box-shadow: 0 0 0 3px rgba(94,180,255,0.18), 0 6px 18px rgba(0,0,0,0.45);
-# }}
-# [data-testid="stSidebar"] [data-baseweb="select"] * {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 700; font-size: 1.05rem; }}
-# [data-testid="stSidebar"] [data-baseweb="select"] svg {{ fill: #7dd3fc !important; }}
-# [data-baseweb="popover"] [data-baseweb="menu"], [data-baseweb="popover"] ul {{ background: #04122e !important; border: 1px solid #5eb4ff; border-radius: 12px; }}
-# [data-baseweb="popover"] li {{ background: #04122e !important; }}
-# [data-baseweb="popover"] li, [data-baseweb="popover"] li * {{ color: #ffffff !important; font-weight: 600; font-size: 1.02rem; }}
-# [data-baseweb="popover"] li:hover, [data-baseweb="popover"] li[aria-selected="true"] {{ background: #0f3f87 !important; }}
-
-# /* ====== CHAMP DE SAISIE DU MESSAGE : bleu de nuit, texte blanc ====== */
-# [data-testid="stChatInput"], [data-testid="stChatInput"] > div, [data-testid="stChatInput"] > div > div {{ background: #071a3d !important; border-color: #5eb4ff !important; }}
-# [data-testid="stChatInput"] {{ border: 2px solid #5eb4ff !important; box-shadow: 0 0 22px rgba(56,189,248,0.28) !important; }}
-# [data-testid="stChatInput"] textarea {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; caret-color: #7dd3fc !important; font-weight: 600 !important; font-size: 1.05rem !important; }}
-# [data-testid="stChatInput"] textarea::placeholder {{ color: #cfe6ff !important; -webkit-text-fill-color: #cfe6ff !important; opacity: 1 !important; }}
-# </style>
-# """,
-#     unsafe_allow_html=True,
-# )
-
-
-# # =====================================================
-# # 6. SESSION
-# # =====================================================
-# defaults = {
-#     "messages": [],
-#     "suggestion": None,
-#     "langue_courante": "Français",
-#     "mode_langue": "Auto",
-#     "page": "Chat Santé",
-# }
-# for cle, valeur in defaults.items():
-#     st.session_state.setdefault(cle, valeur)
-
-# if ERREUR_IMPORT is None:
-#     try:
-#         moteur_disponible = bool(service_pret())
-#         if moteur_disponible and callable(prechauffer):
-#             prechauffer()
-#     except Exception:
-#         moteur_disponible = False
-# else:
-#     moteur_disponible = False
-
-# QUESTIONS_RAPIDES = {
-#     "Nos services": "Quels sont les services de radiologie ?",
-#     "Horaires": "Quels sont les horaires d'ouverture de la radiologie ?",
-#     "Prendre rendez-vous": "Comment prendre rendez-vous pour un examen de radiologie ?",
-#     "Conseils santé": "Comment se préparer à une échographie ou un scanner ?",
-# }
-
-
-# def poser(question: str, page: str = "Chat Santé"):
-#     st.session_state.suggestion = question
-#     st.session_state.page = page
-#     st.rerun()
-
-
-# # =====================================================
-# # 7. BARRE LATÉRALE
-# # =====================================================
-# PAGES = {
-#     "Chat Santé": "💬",
-#     "Services": "🧩",
-#     "Informations utiles": "❓",
-#     "À propos": "ℹ️",
-# }
-
-# with st.sidebar:
-#     logo_html = f'<img src="{LOGO}">' if LOGO else LOGO_SVG
-#     st.markdown(f'<div class="brand">{logo_html}<div>{NOM_HOPITAL}</div></div>', unsafe_allow_html=True)
-
-#     for nom, icone in PAGES.items():
-#         actif = st.session_state.page == nom
-#         if st.button(f"{icone}  {nom}", key=f"nav_{nom}", use_container_width=True,
-#                      type="primary" if actif else "secondary"):
-#             st.session_state.page = nom
-#             st.rerun()
-
-#     st.markdown(
-#         f'<div class="side-card">{COEUR_SVG}<span>Votre santé,<br>notre priorité</span></div>',
-#         unsafe_allow_html=True,
-#     )
-#     st.write("")
-#     choix = st.selectbox(
-#         "Langue de réponse", ["Auto", "Wolof", "Français", "English"],
-#         index=["Auto", "Wolof", "Français", "English"].index(st.session_state.mode_langue),
-#     )
-#     st.session_state.mode_langue = choix
-#     if choix != "Auto":
-#         st.session_state.langue_courante = choix
-
-#     if st.button("🗑️  Nouvelle discussion", use_container_width=True):
-#         st.session_state.messages = []
-#         st.session_state.suggestion = None
-#         st.session_state.page = "Chat Santé"
-#         st.rerun()
-
-#     transcription = "\n\n".join(
-#         f"[{'Patient' if m['role'] == 'user' else NOM_BOT}] {m.get('heure', '')}\n{m['content']}"
-#         for m in st.session_state.messages
-#     )
-#     st.download_button(
-#         "⬇️  Exporter l'échange",
-#         data=transcription or "Aucun échange enregistré.",
-#         file_name=f"medibot_conversation_{datetime.now():%Y%m%d_%H%M}.txt",
-#         mime="text/plain",
-#         use_container_width=True,
-#         disabled=not st.session_state.messages,
-#     )
-#     point = "🟢" if moteur_disponible else "🟠"
-#     st.caption(f"{point} Moteur RAG {'opérationnel' if moteur_disponible else 'hors ligne'}")
-
-
-# # =====================================================
-# # 8. EN-TÊTE + BANNIÈRE
-# # =====================================================
-# pic_html = f'<img src="{PHOTO_USER}">' if PHOTO_USER else "👤"
-# st.markdown(
-#     f"""
-# <div class="topbar">
-#   <div class="slogan">Ensemble pour une meilleure santé</div>
-#   <div class="user"><div class="pic">{pic_html}</div><span>{NOM_UTILISATEUR}</span></div>
-# </div>
-# <div class="banner">
-#   <div class="photo"></div>
-#   <div class="txt">
-#     <div class="titre">{CROIX_SVG}<h1>{NOM_BOT}</h1></div>
-#     <div class="sous">Votre assistant santé intelligent</div>
-#     <div class="acc">Posez vos questions, obtenez des réponses fiables et rapides !</div>
-#   </div>
-# </div>
-# """,
-#     unsafe_allow_html=True,
-# )
-
-# if ERREUR_IMPORT is not None:
-#     st.error("Impossible de charger chatbot.py. Vérifiez qu'il est dans le même dossier que app.py.")
-#     with st.expander("Détails techniques de l'import"):
-#         st.code(str(ERREUR_IMPORT))
-
-
-# # =====================================================
-# # 9. PAGES SECONDAIRES
-# # =====================================================
-# page = st.session_state.page
-
-# if page == "Services":
-#     st.markdown(
-#         """<div class="carte"><h3>Services de radiologie</h3>
-#         ✅ Radiographie (Radio)<br>✅ Échographie (Écho)<br>✅ Scanner (TDM)<br>✅ IRM (sur indication médicale)</div>
-#         <div class="avis">Liste indicative : à valider avec l'équipe du service.</div>""",
-#         unsafe_allow_html=True,
-#     )
-#     if st.button("📅  Prendre rendez-vous"):
-#         poser(QUESTIONS_RAPIDES["Prendre rendez-vous"])
-#     st.stop()
-
-# if page == "Informations utiles":
-#     st.markdown('<div class="carte"><h3>Informations utiles</h3>Choisissez un sujet : MediBot répond à partir des documents du service.</div>', unsafe_allow_html=True)
-#     sujets = {
-#         "🕒 Horaires d'ouverture": QUESTIONS_RAPIDES["Horaires"],
-#         "📄 Documents à apporter": "Quels documents dois-je apporter pour mon examen ?",
-#         "📍 Où se situe le service ?": "Où se situe le service de radiologie ?",
-#         "🧪 Préparation aux examens": QUESTIONS_RAPIDES["Conseils santé"],
-#     }
-#     cols = st.columns(2)
-#     for i, (libelle, q) in enumerate(sujets.items()):
-#         with cols[i % 2]:
-#             if st.button(libelle, key=f"info_{i}", use_container_width=True):
-#                 poser(q)
-#     st.stop()
-
-# if page == "À propos":
-#     st.markdown(
-#         f"""<div class="carte"><h3>À propos de {NOM_BOT}</h3>
-#         {NOM_BOT} est un assistant virtuel de l'{NOM_HOPITAL}. Il répond en wolof, français et anglais
-#         à partir des documents du service de radiologie.</div>""",
-#         unsafe_allow_html=True,
-#     )
-#     st.stop()
-
-
-# # =====================================================
-# # 10. CONVERSATION
-# # =====================================================
-# def heure() -> str:
-#     return datetime.now().strftime("%H:%M")
-
-
-# def bulle_heure(m: dict) -> str:
-#     coches = " ✓✓" if m["role"] == "user" else ""
-#     return f'<div class="heure">{m.get("heure", "")}{coches}</div>'
-
-
-# # Message d'accueil + puces (toujours en haut, comme sur la maquette)
-# with st.chat_message("assistant", avatar=AVATAR_BOT):
-#     st.markdown(
-#         f"Bonjour ! 👋  \nJe suis {NOM_BOT}, votre assistant virtuel de l'{NOM_HOPITAL}.\n\n"
-#         "Comment puis-je vous aider aujourd'hui ?\n\n"
-#         "*Asalaamaalekum ! Bindal ci wolof, write in English, ou écrivez en français.*"
-#     )
-#     cols = st.columns(len(QUESTIONS_RAPIDES))
-#     for col, (libelle, q) in zip(cols, QUESTIONS_RAPIDES.items()):
-#         with col:
-#             if st.button(libelle, key=f"puce_{libelle}", use_container_width=True):
-#                 st.session_state.suggestion = q
-
-# dernier_assistant = max(
-#     (i for i, m in enumerate(st.session_state.messages) if m["role"] == "assistant"), default=-1
-# )
-# for i, message in enumerate(st.session_state.messages):
-#     avatar = AVATAR_BOT if message["role"] == "assistant" else AVATAR_USER
-#     with st.chat_message(message["role"], avatar=avatar):
-#         st.markdown(message["content"])
-#         st.markdown(bulle_heure(message), unsafe_allow_html=True)
-#         if i == dernier_assistant:
-#             if st.button("📅  Prendre rendez-vous", key=f"rdv_{i}"):
-#                 st.session_state.suggestion = QUESTIONS_RAPIDES["Prendre rendez-vous"]
-
-
-# # =====================================================
-# # 11. SAISIE ET RÉPONSE
-# # =====================================================
-# saisie = st.chat_input("Écrivez en français, bindal ci wolof, or write in English...")
-# question = saisie if saisie is not None else st.session_state.suggestion
-# st.session_state.suggestion = None
-
-# if question:
-#     envoi = {"role": "user", "content": question, "heure": heure()}
-#     st.session_state.messages.append(envoi)
-#     with st.chat_message("user", avatar=AVATAR_USER):
-#         st.markdown(question)
-#         st.markdown(bulle_heure(envoi), unsafe_allow_html=True)
-
-#     langue_demandee = commande_langue(question)
-
-#     with st.chat_message("assistant", avatar=AVATAR_BOT):
-#         if langue_demandee:
-#             st.session_state.langue_courante = langue_demandee
-#             st.session_state.mode_langue = langue_demandee
-#             reponse = CONFIRMATIONS[langue_demandee]
-#             st.markdown(reponse)
-#         else:
-#             if st.session_state.mode_langue == "Auto":
-#                 langue_detectee = detecter_langue(question, st.session_state.langue_courante)
-#             else:
-#                 langue_detectee = st.session_state.mode_langue
-#             st.session_state.langue_courante = langue_detectee
-#             msgs = MESSAGES_ERREUR[langue_detectee]
-
-#             if ask_ai_stream is None:
-#                 reponse = msgs["offline"]
-#                 st.error(reponse)
-#             else:
-#                 try:
-#                     with st.spinner(msgs["thinking"]):
-#                         resultat = st.write_stream(
-#                             ask_ai_stream(question, langue=LANGUES[langue_detectee])
-#                         )
-#                     if isinstance(resultat, str) and resultat.strip():
-#                         reponse = resultat
-#                     else:
-#                         reponse = msgs["no_answer"]
-#                         st.warning(reponse)
-#                 except Exception as erreur:
-#                     reponse = msgs["offline"]
-#                     st.error(reponse)
-#                     with st.expander("Détails techniques"):
-#                         st.code(str(erreur))
-
-#     st.session_state.messages.append({"role": "assistant", "content": reponse, "heure": heure()})
-#     st.rerun()
-# Fin Nouveau
-# Hopital
-"""
-HospitalAI – Hôpital Régional de Thiès
-Interface Streamlit du chatbot RAG (ChromaDB + bge-m3 + Gemma via Ollama + NLLB).
-
-Lancer :  streamlit run app.py
-Variables optionnelles : CHROMA_DIR (défaut ./chroma_db), CHAT_MODEL (défaut gemma4:e4b)
-"""
-import html
-import os
-from functools import lru_cache
+import base64
+import re
+from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 
-# ───────────────────────── Configuration ─────────────────────────
-CHROMA_DIR = os.getenv("CHROMA_DIR", "./chroma_db")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "gemma4:e4b")
-LANGUES = {"Français": "fra_Latn", "English": "eng_Latn", "Wolof": "wol_Latn"}
-NLLB = "facebook/nllb-200-distilled-600M"
+# =====================================================
+# 1. MOTEUR RAG (chatbot.py)  — inchangé
+# =====================================================
+try:
+    from chatbot import ask_ai_stream, prechauffer, service_pret
+    ERREUR_IMPORT = None
+except Exception as erreur:
+    ask_ai_stream = None
+    prechauffer = None
+    ERREUR_IMPORT = erreur
 
-st.set_page_config(page_title="HospitalAI · Hôpital Régional de Thiès",
-                   page_icon="💙", layout="wide", initial_sidebar_state="expanded")
-
-# ───────────────────────── Backend RAG (identique aux notebooks) ─────────────────────────
-@st.cache_resource(show_spinner=False)
-def charger_rag():
-    """Retourne (retriever, llm) ou None si Ollama / ChromaDB sont indisponibles."""
-    try:
-        from langchain_chroma import Chroma
-        from langchain_ollama import ChatOllama, OllamaEmbeddings
-        base = Chroma(collection_name="radiologie", persist_directory=CHROMA_DIR,
-                      embedding_function=OllamaEmbeddings(model="bge-m3"))
-        if base._collection.count() == 0:
-            return None
-        llm = ChatOllama(model=CHAT_MODEL, temperature=0.1, top_p=0.99)
-        return base.as_retriever(search_kwargs={"k": 4}), llm
-    except Exception:
-        return None
+    def service_pret():
+        return False
 
 
-@lru_cache(maxsize=1)
-def charger_traducteur():
-    import torch
-    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = AutoTokenizer.from_pretrained(NLLB)
-    mod = AutoModelForSeq2SeqLM.from_pretrained(
-        NLLB, torch_dtype=torch.float16 if dev == "cuda" else torch.float32).to(dev).eval()
-    return tok, mod, dev
+# =====================================================
+# 2. CONFIGURATION
+# =====================================================
+NOM_BOT = "MediBot"
+NOM_HOPITAL = "Hôpital Régional de Thiès"
+NOM_UTILISATEUR = "Ibrahima Dieng"   # affiché en haut à droite
+DOSSIER = Path(__file__).parent
 
+st.set_page_config(
+    page_title=f"{NOM_BOT} — {NOM_HOPITAL}",
+    page_icon="🩺",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-def traduire(texte, src, cible):
-    if not texte.strip() or src == cible:
-        return texte
-    import torch
-    tok, mod, dev = charger_traducteur()
-    tok.src_lang = src
-    x = tok(texte, return_tensors="pt", truncation=True, max_length=512).to(dev)
-    with torch.inference_mode():
-        y = mod.generate(**x, forced_bos_token_id=tok.convert_tokens_to_ids(cible),
-                         max_new_tokens=256, num_beams=4)
-    return tok.batch_decode(y, skip_special_tokens=True)[0].strip()
+LANGUES = {"Wolof": "wolof", "Français": "français", "English": "anglais"}
 
-
-DEMO = {  # utilisé uniquement si la base RAG n'est pas disponible (mode démonstration)
-    "horaire": "Le service de radiologie est ouvert du lundi au vendredi, de 8h à 17h. (donnée d'exemple)",
-    "document": "Merci d'apporter votre pièce d'identité, votre ordonnance et vos anciens examens. (donnée d'exemple)",
-    "rendez": "Les rendez-vous se prennent à l'accueil de la radiologie ou par téléphone. (donnée d'exemple)",
+# =====================================================
+# 3. DÉTECTION DE LANGUE (Wolof / Français / English)
+# =====================================================
+MOTS_WOLOF_FORTS = {
+    "wolof", "nanga", "def", "naka", "jàmm", "jamm", "jërëjëf", "jerejef", "dama", "bëgg",
+    "begg", "laaj", "laajal", "serwiis", "kayit", "yan", "ban", "waxtu", "lañuy", "lanuy",
+    "fii", "ubbeeku", "ubbi", "tontu", "waaw", "deedeet", "déedéet", "ñu", "dëkk", "toog",
+    "jàppale", "jappale", "yoon", "fekk", "nekk", "nekkul", "ndax", "léegi", "legi",
+    "asalaamaalekum", "salaam", "maalekum", "lii", "loolu", "lan", "walla", "mbaa", "rekk",
+    "mën", "men", "dafa", "amul", "xam", "xamul", "ngi", "maa", "kaay", "dem", "indi",
+    "xibaar", "doktoor", "jëm", "fan", "foo", "lu", "dinaa", "dina", "ekografi", "lopitaal",
+    "ana", "ngir", "sama", "suñu", "sunu", "nan", "nuyoo", "nuyo", "sant", "sante",
+}
+MOTS_WOLOF_FAIBLES = {"bi", "yi", "ci", "ak", "sa", "am", "la", "na", "di", "du", "bu", "su"}
+MOTS_FR = {
+    "le", "la", "les", "des", "du", "de", "un", "une", "est", "sont", "je", "vous", "nous",
+    "quel", "quels", "quelle", "quelles", "où", "ou", "et", "pour", "dans", "avec", "sur",
+    "que", "qui", "quoi", "comment", "combien", "puis", "peut", "bonjour", "salut", "bonsoir",
+    "merci", "horaires", "service", "services", "examens", "examen", "documents", "apporter",
+    "rendez-vous", "faut", "dois", "il", "elle", "au", "aux", "ce", "cette", "mon", "ma",
+    "mes", "radiologie", "est-ce", "ai", "suis", "veux", "voudrais", "besoin", "échographie",
+    "echographie", "scanner", "irm", "préparation", "preparation", "résultats", "resultats",
+    "hôpital", "hopital", "faire", "tarif", "tarifs", "ouvert", "ouverture", "fermeture",
+    "svp", "s'il", "plaît", "conseils", "santé", "nos",
+}
+MOTS_EN = {
+    "the", "is", "are", "what", "where", "how", "do", "does", "can", "i", "you", "my", "your",
+    "which", "when", "who", "with", "for", "and", "of", "to", "hello", "hi", "thanks", "thank",
+    "please", "hours", "appointment", "need", "want", "should", "bring", "open", "available",
+    "department", "examinations", "exam", "exams", "it", "there", "this", "that", "me",
+    "ultrasound", "ct", "mri", "xray", "x-ray", "results", "preparation", "cost", "price",
+    "hospital", "radiology",
+}
+COMMANDES_LANGUE = {
+    "wolof": "Wolof", "français": "Français", "francais": "Français", "french": "Français",
+    "anglais": "English", "english": "English",
+}
+CONFIRMATIONS = {
+    "Wolof": "Waaw, dinaa la tontu ci **wolof** ci saa si. Laajal sa laaj ci serwiisu radiologie.",
+    "Français": "Parfait, je vous répondrai directement en **français**. Posez votre question sur le service de radiologie.",
+    "English": "Understood, I will answer directly in **English**. Ask your question about the radiology department.",
+}
+MESSAGES_ERREUR = {
+    "Français": {
+        "offline": "Le moteur d'assistance est momentanément indisponible. Veuillez réessayer ou vous adresser à l'accueil de la radiologie.",
+        "no_answer": "Aucune réponse n'a pu être générée. Merci de reformuler votre question.",
+        "thinking": "Consultation des documents du service de radiologie...",
+    },
+    "Wolof": {
+        "offline": "Serwiis bi amul léegi. Jéemaatal ci kanam tuuti walla nga dem ci accueil radiologie.",
+        "no_answer": "Manul naa tontu. Jéemaatal di laaj ci beneen anam.",
+        "thinking": "Maa ngi seet ci kayiti serwiisu radiologie bi...",
+    },
+    "English": {
+        "offline": "The assistant service is temporarily unavailable. Please try again later or contact the radiology front desk.",
+        "no_answer": "I could not generate a response. Please rephrase your question.",
+        "thinking": "Searching radiology department knowledge base...",
+    },
 }
 
 
-def ask_ai(question, langue="Français"):
-    """Retourne (réponse, [passages sources], mode)."""
-    code = LANGUES[langue]
-    q_fr = question if code == "fra_Latn" else traduire(question, code, "fra_Latn")
-    rag = charger_rag()
-    sources = []
-    if rag is None:
-        rep = next((v for k, v in DEMO.items() if k in q_fr.lower()),
-                   "Je ne trouve pas cette information. Veuillez contacter l'accueil de l'hôpital.")
-        mode = "démo"
-    else:
-        retriever, llm = rag
-        docs = retriever.invoke(q_fr)
-        sources = [d.page_content for d in docs]
-        if not docs:
-            rep = "Je ne trouve pas cette information dans les documents du service de radiologie. Veuillez contacter l'accueil de l'hôpital."
-        else:
-            ctx = "\n\n".join(sources)
-            prompt = f"""Tu es HospitalAI, assistant d'information de l'Hôpital régional de Thiès (service de radiologie).
-RÈGLES : utilise uniquement le contexte ; n'invente jamais d'horaires, tarifs ou prestations ;
-si la réponse est absente, dis-le clairement ; ne donne jamais de diagnostic médical ;
-oriente vers le personnel pour toute question médicale personnelle ; réponds en français simple.
-
-CONTEXTE :
-{ctx}
-
-QUESTION DU PATIENT (en français) : {q_fr}
-
-RÉPONSE :"""
-            rep = llm.invoke(prompt).content.strip()
-        mode = "rag"
-    if code != "fra_Latn":
-        rep = traduire(rep, "fra_Latn", code)
-    return rep, sources, mode
+def mots(texte: str) -> list[str]:
+    return re.findall(r"[\w'’\-àâäçéèêëîïôöùûüÿñœ]+", texte.lower())
 
 
-# ───────────────────────── Style ─────────────────────────
-vue = st.session_state.get("vue", "💻 Ordinateur")
-phone = vue.startswith("📱")
+def commande_langue(texte: str) -> str | None:
+    tokens = mots(texte)
+    if 0 < len(tokens) <= 3:
+        for tok in tokens:
+            if tok in COMMANDES_LANGUE:
+                return COMMANDES_LANGUE[tok]
+    return None
 
-PHONE_CSS = ("""
-.block-container { border:10px solid #101828; border-radius:44px; margin-top:12px; background:#f7faff;
-  box-shadow:0 30px 70px rgba(10,58,140,.35); padding:1rem 1rem 6rem !important; }
-.hero h1 { font-size:1.3rem !important; } .chips { display:none !important; }
-""" if phone else "")
 
-st.markdown(f"""
+def detecter_langue(texte: str, langue_precedente: str = "Français") -> str:
+    texte_min = texte.lower().strip()
+    tokens = mots(texte_min)
+    if not tokens:
+        return langue_precedente
+
+    if re.search(
+        r"[ñëà]|jàmm|jërëjëf|asalaamaalekum|ubbeeku|laajal|serwiis|"
+        r"\b(dama|bëgg|begg|nanga|naka|waxtu|kayit|ekografi|lopitaal|"
+        r"waaw|deedeet|déedéet|mën|men|lañuy|lanuy|dinaa|ana)\b",
+        texte_min,
+    ):
+        return "Wolof"
+
+    sw = sum(2.5 for m in tokens if m in MOTS_WOLOF_FORTS) + sum(0.6 for m in tokens if m in MOTS_WOLOF_FAIBLES)
+    sf = sum(1.0 for m in tokens if m in MOTS_FR)
+    se = sum(1.0 for m in tokens if m in MOTS_EN)
+    if re.search(r"[çèùêôéîï]", texte_min):
+        sf += 1.5
+    if re.search(r"\b(i'm|i am|can i|do you|what is|where is|how do)\b", texte_min):
+        se += 2.0
+    if sw >= 1.5 and sw >= sf * 0.75 and sw >= se:
+        return "Wolof"
+
+    scores = {"Wolof": sw, "Français": sf, "English": se}
+    meilleure = max(scores, key=scores.get)
+    return meilleure if scores[meilleure] > 0 else langue_precedente
+
+
+# =====================================================
+# 4. IMAGES (robot, utilisateur, logo, photo de l'hôpital)
+# =====================================================
+ROBOT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+<style>.oeil{transform-box:fill-box;transform-origin:center;animation:cl 3s infinite}@keyframes cl{0%,86%,100%{transform:scaleY(1)}90%,94%{transform:scaleY(0.05)}}</style>
+<circle cx="60" cy="60" r="60" fill="#d6e8fb"/>
+<line x1="60" y1="22" x2="60" y2="32" stroke="#4b8fe2" stroke-width="3" stroke-linecap="round"/>
+<circle cx="60" cy="20" r="4" fill="#4b8fe2"/>
+<rect x="28" y="32" width="64" height="48" rx="22" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
+<rect x="36" y="40" width="48" height="32" rx="14" fill="#101a33"/>
+<g class="oeil"><ellipse cx="49" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="46" cy="50" r="3.4" fill="#ffffff"/></g>
+<g class="oeil"><ellipse cx="71" cy="55" rx="9" ry="11.5" fill="#38bdf8"/><circle cx="68" cy="50" r="3.4" fill="#ffffff"/></g>
+<path d="M54 68 Q60 71.5 66 68" fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M38 86 Q60 80 82 86 L86 112 Q60 120 34 112 Z" fill="#ffffff" stroke="#b9d3f2" stroke-width="2"/>
+<path d="M50 88 Q60 104 70 88" fill="none" stroke="#4b8fe2" stroke-width="2.5"/>
+</svg>"""
+
+USER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+<circle cx="60" cy="60" r="60" fill="#d6e8fb"/>
+<circle cx="60" cy="48" r="16" fill="#1d5fd0"/>
+<path d="M28 94 Q60 58 92 94 Q60 108 28 94 Z" fill="#1d5fd0"/>
+</svg>"""
+
+
+def ecrire_avatar(nom: str, svg: str, defaut: str) -> str:
+    try:
+        chemin = DOSSIER / nom
+        chemin.write_text(" ".join(svg.split()), encoding="utf-8")
+        return str(chemin)
+    except Exception:
+        return defaut
+
+
+AVATAR_BOT = ecrire_avatar("medibot_avatar.svg", ROBOT_SVG, "🤖")
+AVATAR_USER = (str(DOSSIER / "ibrahima.jpg") if (DOSSIER / "ibrahima.jpg").exists()
+               else ecrire_avatar("user_avatar.svg", USER_SVG, "🧑"))
+
+
+def image_b64(*noms: str) -> str | None:
+    """Cherche une image (hopital.jpg, logo.png...) à côté d'app.py."""
+    for nom in noms:
+        chemin = DOSSIER / nom
+        if chemin.exists():
+            mime = "png" if chemin.suffix.lower() == ".png" else "jpeg"
+            return f"data:image/{mime};base64," + base64.b64encode(chemin.read_bytes()).decode()
+    return None
+
+
+PHOTO = image_b64("hopital.jpg", "hopital.jpeg", "hopital.png")
+LOGO = image_b64("logo.png", "logo.jpg")
+PHOTO_USER = image_b64("ibrahima.jpg", "ibrahima.png")
+
+LOGO_SVG = """<svg viewBox="0 0 100 100" width="84" height="84" xmlns="http://www.w3.org/2000/svg">
+<circle cx="50" cy="50" r="47" fill="#ffffff" stroke="#f5c518" stroke-width="5"/>
+<text x="50" y="52" text-anchor="middle" font-family="Arial" font-weight="800" font-size="32" fill="#0a3a82">H+</text>
+<path d="M18 62 Q34 52 50 62 T82 62 L82 70 Q66 80 50 70 T18 70 Z" fill="#1d7fd6"/></svg>"""
+
+CROIX_SVG = """<svg viewBox="0 0 64 64" width="62" height="62" xmlns="http://www.w3.org/2000/svg">
+<rect x="4" y="4" width="56" height="56" rx="14" fill="#0f3f87"/>
+<rect x="12" y="24" width="40" height="16" fill="#0f3f87"/>
+<path d="M12 33 H24 L28 22 L34 44 L39 30 L42 33 H52" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+
+COEUR_SVG = """<svg viewBox="0 0 64 64" width="52" height="52" xmlns="http://www.w3.org/2000/svg">
+<path d="M32 56 C8 38 6 22 16 15 C24 10 30 16 32 21 C34 16 40 10 48 15 C58 22 56 38 32 56 Z" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"/>
+<path d="M12 32 H24 L28 24 L34 40 L38 30 H52" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+
+
+# =====================================================
+# 5. STYLE (thème clair, barre latérale bleu marine)
+# =====================================================
+fond_banniere = (
+    f"background-image: url('{PHOTO}'); background-size: cover; background-position: left center;"
+    if PHOTO else "background: linear-gradient(135deg,#cfe3fa,#a9c9f1);"
+)
+fond_carte = (
+    f"background-image: linear-gradient(180deg, rgba(8,44,99,0.80) 0%, rgba(8,44,99,0.15) 55%, rgba(8,44,99,0) 100%), url('{PHOTO}');"
+    if PHOTO else "background-image: linear-gradient(160deg,#2f6fd6,#0a3a82);"
+)
+
+st.markdown(
+    f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"], .stMarkdown, button, input, textarea {{ font-family:'Plus Jakarta Sans',sans-serif !important; }}
-:root {{ --b1:#0a3a8c; --b2:#1f6feb; --bl:#e8f0fe; --or:#ffc21a; --tx:#12263f; }}
-#MainMenu, footer, header[data-testid="stHeader"] {{ visibility:hidden; height:0; }}
-.stApp {{ background: radial-gradient(1200px 500px at 90% -10%, #d7e6ff 0%, transparent 60%),
-          linear-gradient(180deg,#f3f7ff 0%,#eaf1fb 100%); }}
-.block-container {{ padding:1.2rem 2rem 6rem; max-width:{'420px' if phone else '1180px'}; }}
-{PHONE_CSS}
-/* Sidebar */
-section[data-testid="stSidebar"] {{ background:linear-gradient(180deg,#0a3a8c 0%,#082b6b 100%); }}
-section[data-testid="stSidebar"] * {{ color:#fff !important; }}
-section[data-testid="stSidebar"] .stRadio label {{ background:rgba(255,255,255,.08); border-radius:12px; padding:.5rem .8rem; margin-bottom:.3rem; }}
-.side-logo {{ font-size:1.7rem; font-weight:800; letter-spacing:-.5px; }} .side-logo b {{ color:var(--or); }}
-.side-card {{ background:rgba(255,255,255,.1); border-radius:16px; padding:14px; font-size:.85rem; line-height:1.5; margin-top:14px; }}
-/* Hero */
-.hero {{ background:linear-gradient(120deg,var(--b1),var(--b2)); border-radius:24px; padding:26px 30px; color:#fff;
-  position:relative; overflow:hidden; box-shadow:0 18px 40px rgba(31,111,235,.30); }}
-.hero:after {{ content:""; position:absolute; right:-60px; top:-60px; width:260px; height:260px; border-radius:50%;
-  background:radial-gradient(circle,rgba(255,194,26,.55),transparent 65%); }}
-.hero h1 {{ margin:0; font-size:2.1rem; font-weight:800; letter-spacing:-.8px; color:#fff; }} .hero h1 b {{ color:var(--or); }}
-.hero p {{ margin:.3rem 0 0; opacity:.9; font-size:1rem; }}
-.status {{ display:inline-flex; gap:8px; align-items:center; background:rgba(255,255,255,.16); padding:5px 12px; border-radius:99px; font-size:.78rem; margin-top:12px; }}
-.dot {{ width:9px; height:9px; border-radius:50%; background:#3ddc84; box-shadow:0 0 0 0 rgba(61,220,132,.7); animation:p 1.8s infinite; }}
-.dot.demo {{ background:var(--or); }}
-@keyframes p {{ 70% {{ box-shadow:0 0 0 9px rgba(61,220,132,0); }} 100% {{ box-shadow:0 0 0 0 rgba(61,220,132,0); }} }}
-.chips {{ display:flex; gap:10px; flex-wrap:wrap; margin:16px 0 4px; }}
-.chip {{ background:#fff; border-radius:16px; padding:10px 14px; font-weight:600; font-size:.85rem; color:var(--b1);
-  box-shadow:0 6px 18px rgba(10,58,140,.10); }}
-/* Chat */
-.row {{ display:flex; gap:10px; margin:12px 0; align-items:flex-end; animation:up .35s ease; }}
-.row.user {{ flex-direction:row-reverse; }}
-@keyframes up {{ from {{ opacity:0; transform:translateY(8px); }} to {{ opacity:1; transform:none; }} }}
-.av {{ width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,var(--b2),var(--b1)); display:grid; place-items:center; font-size:1.2rem; flex:none; }}
-.bub {{ max-width:75%; padding:13px 17px; border-radius:20px; line-height:1.55; font-size:.95rem; color:var(--tx); }}
-.bot .bub {{ background:#fff; border-bottom-left-radius:6px; box-shadow:0 6px 20px rgba(10,58,140,.08); }}
-.user .bub {{ background:linear-gradient(135deg,var(--b2),var(--b1)); color:#fff; border-bottom-right-radius:6px; }}
-.tag {{ font-size:.68rem; opacity:.6; margin-top:6px; }}
-/* Boutons d'action rapide */
-div[data-testid="stButton"] button {{ width:100%; text-align:left; justify-content:flex-start; background:#fff; color:var(--b1);
-  border:1px solid #cfe0ff; border-radius:14px; padding:.7rem 1rem; font-weight:600; transition:.2s; box-shadow:0 4px 12px rgba(10,58,140,.06); }}
-div[data-testid="stButton"] button:hover {{ transform:translateY(-2px); border-color:var(--b2); box-shadow:0 10px 22px rgba(31,111,235,.2); color:var(--b2); }}
-[data-testid="stChatInput"] {{ border-radius:18px; box-shadow:0 10px 30px rgba(10,58,140,.15); }}
-.foot {{ text-align:center; color:#5b6f8c; font-size:.78rem; margin-top:26px; }}
-</style>
-""", unsafe_allow_html=True)
+#MainMenu, footer {{ visibility: hidden; }}
+header[data-testid="stHeader"] {{ background: transparent; }}
+.stApp {{ background: #f4f7fc; }}
+.stApp, .stApp p, .stApp li, .stApp span, .stApp label, .stApp div {{ color: #1e293b; }}
+.main .block-container {{ max-width: 1000px; padding: 0.6rem 1.6rem 6rem 1.6rem; }}
 
-# ───────────────────────── Barre latérale ─────────────────────────
+/* ---------- Barre latérale ---------- */
+[data-testid="stSidebar"] {{ background: linear-gradient(180deg,#0b3a7e 0%,#082c63 100%); }}
+[data-testid="stSidebar"] * {{ color: #ffffff; }}
+[data-testid="stSidebar"] .brand {{ text-align: center; padding: 8px 0 18px 0; line-height: 1.2; }}
+[data-testid="stSidebar"] .brand img {{ width: 84px; height: 84px; border-radius: 50%; }}
+[data-testid="stSidebar"] .brand div {{ font-size: 1.28rem; font-weight: 700; margin-top: 10px; }}
+[data-testid="stSidebar"] div.stButton > button {{
+    justify-content: flex-start; width: 100%; min-height: 46px; border-radius: 12px;
+    background: transparent; border: none; box-shadow: none; font-size: 1rem; font-weight: 500;
+}}
+[data-testid="stSidebar"] div.stButton > button:hover {{ background: rgba(255,255,255,0.10); }}
+[data-testid="stSidebar"] div.stButton > button[kind="primary"],
+[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
+    background: linear-gradient(90deg,#2f6fd6,#4a86e8); font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}}
+[data-testid="stSidebar"] div.stButton > button p {{ color: #ffffff !important; }}
+[data-testid="stSidebar"] div.stDownloadButton > button {{
+    width: 100%; border-radius: 12px; background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.25); color: #ffffff;
+}}
+[data-testid="stSidebar"] div.stDownloadButton > button p {{ color: #ffffff !important; }}
+.side-card {{
+    {fond_carte} background-size: cover; background-position: center;
+    border-radius: 16px; padding: 18px 16px; margin-top: 18px; height: 240px; background-color: #0a3a82;
+    display: flex; align-items: flex-start; gap: 12px; font-weight: 600; font-size: 1.05rem; line-height: 1.25;
+}}
+.side-card, .side-card * {{ color: #ffffff !important; }}
+
+/* ---------- Barre du haut + bannière ---------- */
+.topbar {{ display: flex; justify-content: space-between; align-items: center; padding: 8px 4px 14px 4px; }}
+.topbar .slogan {{ border-left: 2px solid #94a3b8; padding-left: 14px; font-style: italic; font-weight: 600; color: #1e3a6e !important; }}
+.topbar .user {{ display: flex; align-items: center; gap: 10px; font-weight: 500; }}
+.topbar .user .pic {{
+    width: 44px; height: 44px; border-radius: 50%; background: #d6e8fb; border: 2px solid #ffffff; box-shadow: 0 2px 8px rgba(15,63,135,0.25);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+}}
+.topbar .user .pic img {{ width: 100%; height: 100%; object-fit: cover; }}
+.banner {{
+    display: flex; overflow: hidden; border-radius: 18px; min-height: 150px; margin-bottom: 18px;
+    background: linear-gradient(100deg,#e4effc 0%,#cfe2f9 60%,#b4d2f5 100%);
+    border: 1px solid #dbe6f5; box-shadow: 0 4px 14px rgba(15,63,135,0.08);
+}}
+.banner .photo {{ flex: 0 0 36%; min-height: 150px; {fond_banniere} }}
+.banner .txt {{ flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 14px 24px; }}
+.banner .titre {{ display: flex; align-items: center; gap: 14px; }}
+.banner h1 {{ margin: 0; font-size: 2.5rem; font-weight: 800; color: #0f3f87 !important; line-height: 1; padding: 0; }}
+.banner .sous {{ font-size: 1.25rem; font-weight: 500; color: #1e3a6e !important; margin: 4px 0 8px 0; }}
+.banner .acc {{ font-style: italic; font-size: 0.98rem; color: #1e293b !important; }}
+@media (max-width: 760px) {{
+    .banner .photo {{ display: none; }}
+    .banner h1 {{ font-size: 1.9rem; }}
+    .topbar .slogan {{ font-size: 0.85rem; }}
+}}
+
+/* ---------- Conversation ---------- */
+[data-testid="stChatMessage"] {{ background: transparent; border: none; box-shadow: none; padding: 6px 0; gap: 14px; align-items: flex-start; }}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{ flex-direction: row-reverse; }}
+[data-testid^="stChatMessageAvatar"] {{ width: 56px; height: 56px; border-radius: 50%; background: #d6e8fb; }}
+[data-testid^="stChatMessageAvatar"] img {{ border-radius: 50%; object-fit: cover; width: 100%; height: 100%; }}
+[data-testid="stChatMessageContent"] {{
+    background: #e9eff8; border: 1px solid #dde6f3; border-radius: 6px 18px 18px 18px;
+    padding: 14px 20px; width: fit-content; max-width: 78%;
+}}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {{
+    background: #1560c7; border-color: #1560c7; border-radius: 18px 6px 18px 18px; margin-left: auto;
+}}
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] * {{ color: #ffffff !important; }}
+[data-testid="stChatMessageContent"] p, [data-testid="stChatMessageContent"] li {{ font-size: 1.02rem; line-height: 1.6; }}
+.heure {{ text-align: right; font-size: 0.78rem; color: #8a97ab !important; margin-top: 4px; }}
+
+/* ---------- Boutons de la zone principale (puces) ---------- */
+[data-testid="stMain"] div.stButton > button {{
+    border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: 0.92rem; font-weight: 600;
+    background: #ffffff; border: 1px solid #7aa7e8; color: #1d4f9f; box-shadow: none; transition: all .15s ease;
+}}
+[data-testid="stMain"] div.stButton > button p {{ color: #1d4f9f !important; }}
+[data-testid="stMain"] div.stButton > button:hover {{ background: #eaf2fe; border-color: #1d5fd0; }}
+
+/* ---------- Cartes des pages ---------- */
+.carte {{ background: #ffffff; border: 1px solid #dbe6f5; border-radius: 16px; padding: 22px 26px; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(15,63,135,0.06); }}
+.carte h3 {{ margin: 0 0 10px 0; color: #0f3f87 !important; }}
+.avis {{ font-size: 0.9rem; color: #475569 !important; background: #fff8e6; border: 1px solid #f3dd9a; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0; }}
+
+/* ---------- Zone de saisie ---------- */
+[data-testid="stBottom"], [data-testid="stBottom"] > div {{ background: #f4f7fc !important; }}
+[data-testid="stChatInput"], [data-testid="stChatInput"] > div, [data-testid="stChatInput"] > div > div {{
+    background: #ffffff !important; border-radius: 999px !important; border-color: #dbe6f5 !important;
+}}
+[data-testid="stChatInput"] {{ border: 1px solid #dbe6f5 !important; box-shadow: 0 2px 10px rgba(15,63,135,0.08) !important; }}
+[data-testid="stChatInput"] textarea {{ color: #1e293b !important; -webkit-text-fill-color: #1e293b !important; caret-color: #1d5fd0 !important; background: transparent !important; }}
+[data-testid="stChatInput"] textarea::placeholder {{ color: #64748b !important; -webkit-text-fill-color: #64748b !important; opacity: 1 !important; }}
+[data-testid="stChatInput"] button {{ background: #1560c7 !important; border-radius: 14px !important; color: #ffffff !important; }}
+[data-testid="stChatInput"] button svg {{ fill: #ffffff !important; color: #ffffff !important; }}
+/* ====== VISIBILITÉ : texte blanc éclatant sur bleu de nuit ====== */
+[data-testid="stSidebar"], [data-testid="stSidebar"] * {{ color: #ffffff !important; }}
+[data-testid="stSidebar"] .brand div {{ color: #ffffff !important; font-weight: 800; font-size: 1.3rem; text-shadow: 0 1px 8px rgba(0,0,0,0.5); }}
+[data-testid="stSidebar"] div.stButton > button {{ justify-content: flex-start !important; padding-left: 16px !important; }}
+[data-testid="stSidebar"] div.stButton > button > div {{ justify-content: flex-start !important; width: 100%; }}
+[data-testid="stSidebar"] div.stButton > button p {{ text-align: left; font-weight: 600; font-size: 1.02rem; color: #ffffff !important; }}
+[data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarCollapseButton"] button {{ color: #ffffff !important; fill: #ffffff !important; }}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] * {{ color: #dbeafe !important; font-weight: 600; }}
+
+/* ====== CHAMP DE LANGUE : bleu de nuit, texte blanc ====== */
+[data-testid="stSidebar"] [data-testid="stSelectbox"] label p {{ font-weight: 700; font-size: 0.98rem; color: #ffffff !important; }}
+[data-testid="stSidebar"] [data-baseweb="select"] > div {{
+    background: #04122e !important; border: 2px solid #5eb4ff !important; border-radius: 14px !important;
+    min-height: 50px; box-shadow: 0 0 0 3px rgba(94,180,255,0.18), 0 6px 18px rgba(0,0,0,0.45);
+}}
+[data-testid="stSidebar"] [data-baseweb="select"] * {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; font-weight: 700; font-size: 1.05rem; }}
+[data-testid="stSidebar"] [data-baseweb="select"] svg {{ fill: #7dd3fc !important; }}
+[data-baseweb="popover"] [data-baseweb="menu"], [data-baseweb="popover"] ul {{ background: #04122e !important; border: 1px solid #5eb4ff; border-radius: 12px; }}
+[data-baseweb="popover"] li {{ background: #04122e !important; }}
+[data-baseweb="popover"] li, [data-baseweb="popover"] li * {{ color: #ffffff !important; font-weight: 600; font-size: 1.02rem; }}
+[data-baseweb="popover"] li:hover, [data-baseweb="popover"] li[aria-selected="true"] {{ background: #0f3f87 !important; }}
+
+/* ====== CHAMP DE SAISIE DU MESSAGE : bleu de nuit, texte blanc ====== */
+[data-testid="stChatInput"], [data-testid="stChatInput"] > div, [data-testid="stChatInput"] > div > div {{ background: #071a3d !important; border-color: #5eb4ff !important; }}
+[data-testid="stChatInput"] {{ border: 2px solid #5eb4ff !important; box-shadow: 0 0 22px rgba(56,189,248,0.28) !important; }}
+[data-testid="stChatInput"] textarea {{ color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; caret-color: #7dd3fc !important; font-weight: 600 !important; font-size: 1.05rem !important; }}
+[data-testid="stChatInput"] textarea::placeholder {{ color: #cfe6ff !important; -webkit-text-fill-color: #cfe6ff !important; opacity: 1 !important; }}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# =====================================================
+# 6. SESSION
+# =====================================================
+defaults = {
+    "messages": [],
+    "suggestion": None,
+    "langue_courante": "Français",
+    "mode_langue": "Auto",
+    "page": "Chat Santé",
+}
+for cle, valeur in defaults.items():
+    st.session_state.setdefault(cle, valeur)
+
+if ERREUR_IMPORT is None:
+    try:
+        moteur_disponible = bool(service_pret())
+        if moteur_disponible and callable(prechauffer):
+            prechauffer()
+    except Exception:
+        moteur_disponible = False
+else:
+    moteur_disponible = False
+
+QUESTIONS_RAPIDES = {
+    "Nos services": "Quels sont les services de radiologie ?",
+    "Horaires": "Quels sont les horaires d'ouverture de la radiologie ?",
+    "Prendre rendez-vous": "Comment prendre rendez-vous pour un examen de radiologie ?",
+    "Conseils santé": "Comment se préparer à une échographie ou un scanner ?",
+}
+
+
+def poser(question: str, page: str = "Chat Santé"):
+    st.session_state.suggestion = question
+    st.session_state.page = page
+    st.rerun()
+
+
+# =====================================================
+# 7. BARRE LATÉRALE
+# =====================================================
+PAGES = {
+    "Chat Santé": "💬",
+    "Services": "🧩",
+    "Informations utiles": "❓",
+    "À propos": "ℹ️",
+}
+
 with st.sidebar:
-    st.markdown('<div class="side-logo">💙 Hospital<b>AI</b></div>', unsafe_allow_html=True)
-    st.caption("Votre assistant intelligent à l'hôpital")
-    st.radio("Affichage", ["💻 Ordinateur", "📱 Téléphone"], key="vue")
-    langue = st.selectbox("🌍 Langue / Làkk", list(LANGUES))
-    st.markdown("""<div class="side-card"><b>Hôpital Régional de Thiès</b><br>
-    Service de radiologie<br>🕒 Assistant disponible 24h/24 – 7j/7<br>
-    ⚠️ Information générale : aucun diagnostic médical. En cas d'urgence, appelez les urgences.</div>""",
-                unsafe_allow_html=True)
-    if st.button("🗑️ Nouvelle conversation"):
-        st.session_state.msgs = []
+    logo_html = f'<img src="{LOGO}">' if LOGO else LOGO_SVG
+    st.markdown(f'<div class="brand">{logo_html}<div>{NOM_HOPITAL}</div></div>', unsafe_allow_html=True)
+
+    for nom, icone in PAGES.items():
+        actif = st.session_state.page == nom
+        if st.button(f"{icone}  {nom}", key=f"nav_{nom}", use_container_width=True,
+                     type="primary" if actif else "secondary"):
+            st.session_state.page = nom
+            st.rerun()
+
+    st.markdown(
+        f'<div class="side-card">{COEUR_SVG}<span>Votre santé,<br>notre priorité</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.write("")
+    choix = st.selectbox(
+        "Langue de réponse", ["Auto", "Wolof", "Français", "English"],
+        index=["Auto", "Wolof", "Français", "English"].index(st.session_state.mode_langue),
+    )
+    st.session_state.mode_langue = choix
+    if choix != "Auto":
+        st.session_state.langue_courante = choix
+
+    if st.button("🗑️  Nouvelle discussion", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.suggestion = None
+        st.session_state.page = "Chat Santé"
         st.rerun()
 
-# ───────────────────────── En-tête ─────────────────────────
-rag_ok = charger_rag() is not None
-st.markdown(f"""
-<div class="hero"><h1>Hospital<b>AI</b></h1>
-<p>Bonjour 👋 Je suis votre assistant intelligent de l'Hôpital Régional de Thiès.<br>Je vous informe, vous oriente et réponds à vos questions.</p>
-<span class="status"><span class="dot {'' if rag_ok else 'demo'}"></span>{'En ligne · base de connaissances active' if rag_ok else 'Mode démonstration · base RAG non détectée'}</span></div>
-<div class="chips"><span class="chip">🕒 Infos 24h/24</span><span class="chip">📅 Rendez-vous</span>
-<span class="chip">📍 Orientation</span><span class="chip">⚡ Réponses instantanées</span><span class="chip">🌐 Français · English · Wolof</span></div>
-""", unsafe_allow_html=True)
+    transcription = "\n\n".join(
+        f"[{'Patient' if m['role'] == 'user' else NOM_BOT}] {m.get('heure', '')}\n{m['content']}"
+        for m in st.session_state.messages
+    )
+    st.download_button(
+        "⬇️  Exporter l'échange",
+        data=transcription or "Aucun échange enregistré.",
+        file_name=f"medibot_conversation_{datetime.now():%Y%m%d_%H%M}.txt",
+        mime="text/plain",
+        use_container_width=True,
+        disabled=not st.session_state.messages,
+    )
+    point = "🟢" if moteur_disponible else "🟠"
+    st.caption(f"{point} Moteur RAG {'opérationnel' if moteur_disponible else 'hors ligne'}")
 
-# ───────────────────────── Actions rapides ─────────────────────────
-ACTIONS = {
-    "🏥 Informations sur l'hôpital": "Pouvez-vous me présenter le service de radiologie ?",
-    "🕒 Horaires et contacts": "Quels sont les horaires du service de radiologie ?",
-    "📅 Prendre un rendez-vous": "Comment prendre un rendez-vous en radiologie ?",
-    "📄 Documents à apporter": "Quels documents dois-je apporter ?",
-    "🩺 Services disponibles": "Quels examens sont disponibles en radiologie ?",
-    "💬 Autre question": None,
-}
-st.markdown("#### Que souhaitez-vous faire aujourd'hui ?")
-cols = st.columns(1 if phone else 3)
-pending = None
-for i, (label, q) in enumerate(ACTIONS.items()):
-    if cols[i % len(cols)].button(label, key=f"a{i}") and q:
-        pending = q
 
-# ───────────────────────── Conversation ─────────────────────────
-st.session_state.setdefault("msgs", [])
-saisie = st.chat_input("Posez votre question ici…")
-question = saisie or pending
+# =====================================================
+# 8. EN-TÊTE + BANNIÈRE
+# =====================================================
+pic_html = f'<img src="{PHOTO_USER}">' if PHOTO_USER else "👤"
+st.markdown(
+    f"""
+<div class="topbar">
+  <div class="slogan">Ensemble pour une meilleure santé</div>
+  <div class="user"><div class="pic">{pic_html}</div><span>{NOM_UTILISATEUR}</span></div>
+</div>
+<div class="banner">
+  <div class="photo"></div>
+  <div class="txt">
+    <div class="titre">{CROIX_SVG}<h1>{NOM_BOT}</h1></div>
+    <div class="sous">Votre assistant santé intelligent</div>
+    <div class="acc">Posez vos questions, obtenez des réponses fiables et rapides !</div>
+  </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+if ERREUR_IMPORT is not None:
+    st.error("Impossible de charger chatbot.py. Vérifiez qu'il est dans le même dossier que app.py.")
+    with st.expander("Détails techniques de l'import"):
+        st.code(str(ERREUR_IMPORT))
+
+
+# =====================================================
+# 9. PAGES SECONDAIRES
+# =====================================================
+page = st.session_state.page
+
+if page == "Services":
+    st.markdown(
+        """<div class="carte"><h3>Services de radiologie</h3>
+        ✅ Radiographie (Radio)<br>✅ Échographie (Écho)<br>✅ Scanner (TDM)<br>✅ IRM (sur indication médicale)</div>
+        <div class="avis">Liste indicative : à valider avec l'équipe du service.</div>""",
+        unsafe_allow_html=True,
+    )
+    if st.button("📅  Prendre rendez-vous"):
+        poser(QUESTIONS_RAPIDES["Prendre rendez-vous"])
+    st.stop()
+
+if page == "Informations utiles":
+    st.markdown('<div class="carte"><h3>Informations utiles</h3>Choisissez un sujet : MediBot répond à partir des documents du service.</div>', unsafe_allow_html=True)
+    sujets = {
+        "🕒 Horaires d'ouverture": QUESTIONS_RAPIDES["Horaires"],
+        "📄 Documents à apporter": "Quels documents dois-je apporter pour mon examen ?",
+        "📍 Où se situe le service ?": "Où se situe le service de radiologie ?",
+        "🧪 Préparation aux examens": QUESTIONS_RAPIDES["Conseils santé"],
+    }
+    cols = st.columns(2)
+    for i, (libelle, q) in enumerate(sujets.items()):
+        with cols[i % 2]:
+            if st.button(libelle, key=f"info_{i}", use_container_width=True):
+                poser(q)
+    st.stop()
+
+if page == "À propos":
+    st.markdown(
+        f"""<div class="carte"><h3>À propos de {NOM_BOT}</h3>
+        {NOM_BOT} est un assistant virtuel de l'{NOM_HOPITAL}. Il répond en wolof, français et anglais
+        à partir des documents du service de radiologie.</div>""",
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+
+# =====================================================
+# 10. CONVERSATION
+# =====================================================
+def heure() -> str:
+    return datetime.now().strftime("%H:%M")
+
+
+def bulle_heure(m: dict) -> str:
+    coches = " ✓✓" if m["role"] == "user" else ""
+    return f'<div class="heure">{m.get("heure", "")}{coches}</div>'
+
+
+# Message d'accueil + puces (toujours en haut, comme sur la maquette)
+with st.chat_message("assistant", avatar=AVATAR_BOT):
+    st.markdown(
+        f"Bonjour ! 👋  \nJe suis {NOM_BOT}, votre assistant virtuel de l'{NOM_HOPITAL}.\n\n"
+        "Comment puis-je vous aider aujourd'hui ?\n\n"
+        "*Asalaamaalekum ! Bindal ci wolof, write in English, ou écrivez en français.*"
+    )
+    cols = st.columns(len(QUESTIONS_RAPIDES))
+    for col, (libelle, q) in zip(cols, QUESTIONS_RAPIDES.items()):
+        with col:
+            if st.button(libelle, key=f"puce_{libelle}", use_container_width=True):
+                st.session_state.suggestion = q
+
+dernier_assistant = max(
+    (i for i, m in enumerate(st.session_state.messages) if m["role"] == "assistant"), default=-1
+)
+for i, message in enumerate(st.session_state.messages):
+    avatar = AVATAR_BOT if message["role"] == "assistant" else AVATAR_USER
+    with st.chat_message(message["role"], avatar=avatar):
+        st.markdown(message["content"])
+        st.markdown(bulle_heure(message), unsafe_allow_html=True)
+        if i == dernier_assistant:
+            if st.button("📅  Prendre rendez-vous", key=f"rdv_{i}"):
+                st.session_state.suggestion = QUESTIONS_RAPIDES["Prendre rendez-vous"]
+
+
+# =====================================================
+# 11. SAISIE ET RÉPONSE
+# =====================================================
+saisie = st.chat_input("Écrivez en français, bindal ci wolof, or write in English...")
+question = saisie if saisie is not None else st.session_state.suggestion
+st.session_state.suggestion = None
 
 if question:
-    st.session_state.msgs.append({"role": "user", "text": question})
-    with st.spinner("HospitalAI réfléchit…"):
-        try:
-            rep, src, mode = ask_ai(question, langue)
-        except Exception as e:
-            rep, src, mode = f"Une erreur est survenue : {e}", [], "erreur"
-    st.session_state.msgs.append({"role": "bot", "text": rep, "src": src, "mode": mode})
+    envoi = {"role": "user", "content": question, "heure": heure()}
+    st.session_state.messages.append(envoi)
+    with st.chat_message("user", avatar=AVATAR_USER):
+        st.markdown(question)
+        st.markdown(bulle_heure(envoi), unsafe_allow_html=True)
 
+    langue_demandee = commande_langue(question)
 
-def bulle(m):
-    txt = html.escape(m["text"]).replace("\n", "<br>")
-    if m["role"] == "user":
-        return f'<div class="row user"><div class="bub">{txt}</div></div>'
-    tag = "Source : base documentaire de la radiologie" if m.get("mode") == "rag" else "Mode démonstration"
-    return f'<div class="row bot"><div class="av">🤖</div><div class="bub">{txt}<div class="tag">{tag}</div></div></div>'
+    with st.chat_message("assistant", avatar=AVATAR_BOT):
+        if langue_demandee:
+            st.session_state.langue_courante = langue_demandee
+            st.session_state.mode_langue = langue_demandee
+            reponse = CONFIRMATIONS[langue_demandee]
+            st.markdown(reponse)
+        else:
+            if st.session_state.mode_langue == "Auto":
+                langue_detectee = detecter_langue(question, st.session_state.langue_courante)
+            else:
+                langue_detectee = st.session_state.mode_langue
+            st.session_state.langue_courante = langue_detectee
+            msgs = MESSAGES_ERREUR[langue_detectee]
 
+            if ask_ai_stream is None:
+                reponse = msgs["offline"]
+                st.error(reponse)
+            else:
+                try:
+                    with st.spinner(msgs["thinking"]):
+                        resultat = st.write_stream(
+                            ask_ai_stream(question, langue=LANGUES[langue_detectee])
+                        )
+                    if isinstance(resultat, str) and resultat.strip():
+                        reponse = resultat
+                    else:
+                        reponse = msgs["no_answer"]
+                        st.warning(reponse)
+                except Exception as erreur:
+                    reponse = msgs["offline"]
+                    st.error(reponse)
+                    with st.expander("Détails techniques"):
+                        st.code(str(erreur))
 
-for m in st.session_state.msgs:
-    st.markdown(bulle(m), unsafe_allow_html=True)
-    if m["role"] == "bot" and m.get("src"):
-        with st.expander("📚 Passages utilisés pour répondre"):
-            for p in m["src"]:
-                st.caption(p)
-
-st.markdown('<div class="foot">HospitalAI · La technologie au service de votre santé · Hôpital Régional de Thiès</div>',
-            unsafe_allow_html=True)
+    st.session_state.messages.append({"role": "assistant", "content": reponse, "heure": heure()})
+    st.rerun()
+# Fin Nouveau
+# Hopital
