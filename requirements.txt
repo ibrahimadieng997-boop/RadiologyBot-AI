@@ -2,14 +2,13 @@
 #langchain-core
 #langchain-text-splitters
 #langchain-google-genai
-
-streamlit>=1.38
-torch
-transformers>=4.44
-sentencepiece
-accelerate
+streamlit>=1.40
 langchain-core
 langchain-ollama
 langchain-chroma
+langchain-text-splitters
 chromadb
+torch
+transformers
+sentencepiece
 
